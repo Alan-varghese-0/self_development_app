@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:self_develpoment_app/data/models/theme_provider.dart';
-
+import 'package:syncfusion_flutter_core/core.dart';
 import 'package:self_develpoment_app/presentation/screens/auth/login/bloc/login_bloc.dart';
 import 'package:self_develpoment_app/presentation/screens/onbording/splash.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +14,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseConfig.initialize();
   await SharedPreferences.getInstance();
+  SyncfusionLicense.registerLicense('YOUR LICENSE KEY HERE');
 
   runApp(
     ChangeNotifierProvider(

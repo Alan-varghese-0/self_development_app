@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:self_develpoment_app/presentation/screens/onbording/onboarding_screen.dart';
 import 'package:self_develpoment_app/navigation/bottumbar.dart';
 import 'package:self_develpoment_app/presentation/screens/auth/login/login.dart';
+import 'package:self_develpoment_app/presentation/screens/admin/admin_home.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -40,20 +41,39 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return const OnboardingPage();
     }
 
-    // AFTER ONBOARDING → LISTEN TO AUTH STATE
-    return StreamBuilder<AuthChangeEvent>(
-      stream: Supabase.instance.client.auth.onAuthStateChange.map(
-        (e) => e.event,
-      ),
+    // AUTH STATE LISTENER
+    return StreamBuilder(
+      stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
         final session = Supabase.instance.client.auth.currentSession;
 
-        // USER LOGGED IN → HOME
         if (session != null) {
-          return const Bottumbar();
+          return FutureBuilder(
+            future: Supabase.instance.client
+                .from("profiles")
+                .select("role")
+                .eq("id", session.user.id)
+                .single(),
+            builder: (context, snap) {
+              if (!snap.hasData) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              final role = snap.data?["role"].toString().trim().toLowerCase();
+
+              print("🟣 AUTH WRAPPER ROLE: $role");
+
+              if (role == "admin") {
+                return const AdminHome();
+              } else {
+                return const Bottumbar();
+              }
+            },
+          );
         }
 
-        // USER LOGGED OUT → LOGIN (NO SPLASH)
         return Login();
       },
     );

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:self_develpoment_app/navigation/bottumbar.dart';
+import 'package:self_develpoment_app/presentation/screens/admin/admin_home.dart';
 import 'package:self_develpoment_app/presentation/screens/auth/signup/signup.dart';
 import 'bloc/login_bloc.dart';
 
@@ -14,7 +16,6 @@ class _LoginState extends State<Login> {
   bool showpass = false;
 
   final emailController = TextEditingController();
-
   final passwordController = TextEditingController();
 
   @override
@@ -26,15 +27,34 @@ class _LoginState extends State<Login> {
       body: BlocListener<LoginBloc, LoginState>(
         listener: (context, state) {
           if (state is LoginLoading) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(
               context,
             ).showSnackBar(const SnackBar(content: Text("Logging in...")));
-          } else if (state is LoginSuccess) {
-            Navigator.pushReplacementNamed(context, "/auth-wrapper");
-          } else if (state is LoginFailed) {
+          }
+
+          if (state is LoginFailed) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
             ScaffoldMessenger.of(
               context,
             ).showSnackBar(SnackBar(content: Text(state.message)));
+          } else if (state is LoginSuccess) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final role = state.role.trim().toLowerCase();
+              print("🔴 FINAL DECIDED ROLE: $role");
+
+              if (role == "admin") {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminHome()),
+                );
+              } else {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const Bottumbar()),
+                );
+              }
+            });
           }
         },
         child: SafeArea(
@@ -44,7 +64,6 @@ class _LoginState extends State<Login> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // 🔷 App Logo or Icon
                   const Icon(
                     Icons.self_improvement_rounded,
                     size: 80,
@@ -52,7 +71,6 @@ class _LoginState extends State<Login> {
                   ),
                   const SizedBox(height: 20),
 
-                  // 🧠 App Title
                   Text(
                     "Welcome Back",
                     style: theme.textTheme.headlineSmall?.copyWith(
@@ -61,6 +79,7 @@ class _LoginState extends State<Login> {
                     ),
                   ),
                   const SizedBox(height: 8),
+
                   Text(
                     "Login to continue your journey",
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -70,23 +89,15 @@ class _LoginState extends State<Login> {
 
                   const SizedBox(height: 40),
 
-                  // ✉️ Email Field
+                  // EMAIL FIELD
                   TextField(
                     controller: emailController,
-                    style: TextStyle(color: Colors.black),
+                    style: const TextStyle(color: Colors.black),
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.email_outlined),
                       labelText: "Email",
-                      labelStyle: TextStyle(color: Colors.black),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                          color: Colors.black,
-                          width: 1.2,
-                        ),
-                      ),
+                      labelStyle: const TextStyle(color: Colors.black),
 
-                      // 🔳 WHEN NOT FOCUSED
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: const BorderSide(
@@ -95,7 +106,6 @@ class _LoginState extends State<Login> {
                         ),
                       ),
 
-                      // 🔳 WHEN FOCUSED
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: const BorderSide(
@@ -108,37 +118,24 @@ class _LoginState extends State<Login> {
 
                   const SizedBox(height: 16),
 
-                  // 🔒 Password Field
+                  // PASSWORD FIELD
                   TextField(
                     controller: passwordController,
                     obscureText: !showpass,
-                    style: TextStyle(color: Colors.black),
+                    style: const TextStyle(color: Colors.black),
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
-                      suffixIcon: IconButton(
-                        onPressed: () {
-                          setState(() {
-                            showpass = !showpass;
-                          });
-                        },
-                        icon: Icon(
-                          showpass
-                              ? Icons.visibility
-                              : Icons.visibility_off_rounded,
-                          color: Colors.black,
-                        ),
-                      ),
                       labelText: "Password",
-                      labelStyle: TextStyle(color: Colors.black),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
+                      labelStyle: const TextStyle(color: Colors.black),
+
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(() => showpass = !showpass),
+                        icon: Icon(
+                          showpass ? Icons.visibility : Icons.visibility_off,
                           color: Colors.black,
-                          width: 1.2,
                         ),
                       ),
 
-                      // 🔳 WHEN NOT FOCUSED
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: const BorderSide(
@@ -147,7 +144,6 @@ class _LoginState extends State<Login> {
                         ),
                       ),
 
-                      // 🔳 WHEN FOCUSED
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide: const BorderSide(
@@ -160,7 +156,7 @@ class _LoginState extends State<Login> {
 
                   const SizedBox(height: 30),
 
-                  // 🚀 Login Button
+                  // LOGIN BUTTON
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -193,13 +189,10 @@ class _LoginState extends State<Login> {
 
                   const SizedBox(height: 20),
 
-                  // Forgot Password
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: () {
-                        // TODO: Add forgot password screen
-                      },
+                      onPressed: () {},
                       child: const Text(
                         "Forgot Password?",
                         style: TextStyle(
@@ -212,7 +205,6 @@ class _LoginState extends State<Login> {
 
                   const SizedBox(height: 20),
 
-                  // Divider
                   Row(
                     children: const [
                       Expanded(child: Divider(thickness: 1)),
@@ -229,7 +221,6 @@ class _LoginState extends State<Login> {
 
                   const SizedBox(height: 20),
 
-                  // 🆕 Signup Redirect
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -241,7 +232,7 @@ class _LoginState extends State<Login> {
                         onTap: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (context) => Signup()),
+                            MaterialPageRoute(builder: (_) => Signup()),
                           );
                         },
                         child: const Text(

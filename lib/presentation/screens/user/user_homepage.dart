@@ -2,17 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:self_develpoment_app/presentation/screens/user/audiobook.dart';
-
-class BrainGamesPage extends StatelessWidget {
-  const BrainGamesPage({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Brain Games")),
-      body: const Center(child: Text("Coming soon...")),
-    );
-  }
-}
+import 'package:self_develpoment_app/scheduler/multi_project_scheduler_clean.dart';
 
 class UserHomePage extends StatefulWidget {
   const UserHomePage({super.key});
@@ -296,7 +286,7 @@ class _UserHomePageState extends State<UserHomePage>
               icon: Icons.psychology_alt_rounded,
               title: "Brain Games",
               scheme: scheme,
-              page: const BrainGamesPage(),
+              page: const MultiProjectSchedulerPage(),
             ),
             _QuickCard(
               icon: Icons.menu_book_rounded,

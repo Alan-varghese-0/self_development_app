@@ -1,8 +1,6 @@
 // lib/scheduler/multi_project_scheduler.dart
 
-import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'scheduler_data.dart';
 
@@ -17,24 +15,12 @@ class MultiProjectSchedulerPage extends StatefulWidget {
 class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
   final SchedulerData data = SchedulerData();
 
-  DateTime _focused = DateTime.now();
-  DateTime? _selected;
-
-  // Form inputs
-  final TextEditingController _titleCtrl = TextEditingController();
-  final TextEditingController _hoursCtrl = TextEditingController();
-
-  DateTime? _startDate;
-  DateTime? _deadline;
-  Color _pickedColor = Colors.blue;
-
   bool _loading = true;
-  String? _currentUserId;
   String? _error;
+  String? _currentUserId;
 
-  // timeouts
-  static const Duration initTimeout = Duration(seconds: 12);
-  static const Duration syncTimeout = Duration(seconds: 12);
+  final PageController _pageController = PageController(initialPage: 1000);
+  int _currentPage = 1000;
 
   @override
   void initState() {
@@ -43,306 +29,177 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
   }
 
   Future<void> _initScheduler() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
     try {
       final client = Supabase.instance.client;
-      if (client == null) throw Exception('Supabase client not initialized');
 
-      await data
-          .init(supabaseClient: client)
-          .timeout(
-            initTimeout,
-            onTimeout: () {
-              throw Exception('Hive init/openBox timed out');
-            },
-          );
+      await data.init(supabaseClient: client);
 
       _currentUserId = client.auth.currentUser?.id;
 
-      // migrate any local items to the real user id if user is signed in
       if (_currentUserId != null) {
         await data.migrateLocalToUser(_currentUserId!);
-        try {
-          await data.syncBoth(userId: _currentUserId!).timeout(syncTimeout);
-        } catch (e) {
-          debugPrint('Initial sync failed: $e');
-          _error = 'Initial sync failed: ${_shortError(e)}';
-        }
+        await data.syncBoth(userId: _currentUserId!);
       }
-    } catch (e, st) {
-      debugPrint('Scheduler init error: $e\n$st');
-      _error = 'Initialization error: ${_shortError(e)}';
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      _error = e.toString();
     }
+
+    if (mounted) setState(() => _loading = false);
   }
 
-  String _shortError(Object? e) {
-    if (e == null) return 'unknown';
-    final s = e.toString();
-    return s.length > 200 ? '${s.substring(0, 200)}...' : s;
+  // =====================================================
+  //                    MONTH LOGIC
+  // =====================================================
+
+  DateTime _monthFromPage(int page) {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month + (page - 1000), 1);
   }
 
-  String _dayKey(DateTime d) => d.toIso8601String().split('T').first;
+  List<DateTime> _daysForMonth(DateTime month) {
+    final first = DateTime(month.year, month.month, 1);
+    final daysBefore = first.weekday - 1; // Mon = 1
+    final start = first.subtract(Duration(days: daysBefore));
 
-  List<ProjectHive> _eventsForDay(DateTime day) => data.getAssignmentsFor(day);
+    final list = <DateTime>[];
+    for (int i = 0; i < 42; i++) {
+      list.add(start.add(Duration(days: i)));
+    }
+    return list;
+  }
 
-  Future<void> _openAddDialog({ProjectHive? editing}) async {
-    if (editing != null) {
-      _titleCtrl.text = editing.title;
-      _hoursCtrl.text = editing.dailyHours.toString();
-      _startDate = editing.startDate;
-      _deadline = editing.deadline;
-      _pickedColor = Color(editing.colorValue);
+  // =====================================================
+  //                 STYLING FOR EACH DAY
+  // =====================================================
+
+  Widget _buildDay(DateTime day, DateTime month) {
+    final events = data.getAssignmentsFor(day);
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isToday =
+        day.year == today.year &&
+        day.month == today.month &&
+        day.day == today.day;
+
+    final isPast = day.isBefore(today);
+    final isOutsideMonth = day.month != month.month;
+
+    Color textColor;
+
+    if (isToday) {
+      textColor = Theme.of(context).colorScheme.primary;
+    } else if (isOutsideMonth) {
+      textColor = Colors.grey;
+    } else if (isPast) {
+      textColor = Colors.black;
     } else {
-      _titleCtrl.clear();
-      _hoursCtrl.clear();
-      _startDate = DateTime.now();
-      _deadline = null;
-      _pickedColor = Colors.blue;
+      textColor = Colors.white;
     }
 
-    await showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialog) {
-            final quickHours = [2, 4, 6, 8, 12, 16];
-            final colors = [
-              Colors.red,
-              Colors.blue,
-              Colors.green,
-              Colors.orange,
-              Colors.purple,
-              Colors.teal,
-              Colors.brown,
-              Colors.indigo,
-              Colors.pink,
-              Colors.cyan,
-            ];
-
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              title: Text(editing == null ? 'New Project' : 'Edit Project'),
-              content: SizedBox(
-                width: MediaQuery.of(context).size.width * 0.85,
-                height: 470,
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      TextField(
-                        controller: _titleCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Project Title',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _hoursCtrl,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Hours per day (1–16)',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        children: quickHours.map((h) {
-                          return ActionChip(
-                            label: Text('${h}h'),
-                            onPressed: () {
-                              _hoursCtrl.text = h.toString();
-                              setDialog(() {});
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 20),
-                      ListTile(
-                        title: Text(
-                          _startDate == null
-                              ? 'Select start date'
-                              : 'Start: ${_dayKey(_startDate!)}',
-                        ),
-                        trailing: const Icon(Icons.calendar_today),
-                        onTap: () async {
-                          final now = DateTime.now();
-                          final picked = await showDatePicker(
-                            context: ctx,
-                            initialDate: _startDate ?? now,
-                            firstDate: DateTime(now.year - 1),
-                            lastDate: DateTime(now.year + 10),
-                          );
-                          if (picked != null)
-                            setDialog(() => _startDate = picked);
-                        },
-                      ),
-                      ListTile(
-                        title: Text(
-                          _deadline == null
-                              ? 'Select deadline'
-                              : 'Deadline: ${_dayKey(_deadline!)}',
-                        ),
-                        trailing: const Icon(Icons.calendar_month),
-                        onTap: () async {
-                          if (_startDate == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Select start date first'),
-                              ),
-                            );
-                            return;
-                          }
-
-                          final initial =
-                              _deadline ??
-                              _startDate!.add(const Duration(days: 1));
-                          final picked = await showDatePicker(
-                            context: ctx,
-                            initialDate: initial,
-                            firstDate: _startDate!,
-                            lastDate: DateTime(DateTime.now().year + 10),
-                          );
-                          if (picked != null) {
-                            setDialog(
-                              () => _deadline = picked.isBefore(_startDate!)
-                                  ? _startDate
-                                  : picked,
-                            );
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: const Text('Color:'),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        height: 110,
-                        child: GridView.count(
-                          crossAxisCount: 5,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          physics: const NeverScrollableScrollPhysics(),
-                          children: colors.map((c) {
-                            final sel = _pickedColor == c;
-                            return GestureDetector(
-                              onTap: () => setDialog(() => _pickedColor = c),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                width: sel ? 44 : 36,
-                                height: sel ? 44 : 36,
-                                decoration: BoxDecoration(
-                                  color: c,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: sel ? Colors.black : Colors.black26,
-                                    width: sel ? 2 : 1,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ],
+    return Container(
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        children: [
+          Text(
+            "${day.day}",
+            style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+          ),
+          const SizedBox(height: 6),
+          if (events.isNotEmpty)
+            Wrap(
+              spacing: 3,
+              runSpacing: 3,
+              children: events.take(4).map((p) {
+                return Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: Color(p.colorValue),
+                    shape: BoxShape.circle,
                   ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    final title = _titleCtrl.text.trim();
-                    final hours = int.tryParse(_hoursCtrl.text.trim()) ?? 0;
-
-                    if (title.isEmpty ||
-                        hours < 1 ||
-                        hours > 16 ||
-                        _startDate == null ||
-                        _deadline == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Fill all fields correctly'),
-                        ),
-                      );
-                      return;
-                    }
-
-                    if (editing == null) {
-                      final userId = _currentUserId ?? 'local';
-                      await data.addLocal(
-                        title: title,
-                        dailyHours: hours,
-                        startDate: _startDate!,
-                        deadline: _deadline!,
-                        colorValue: _pickedColor.value,
-                        userId: userId,
-                      );
-                    } else {
-                      editing.title = title;
-                      editing.dailyHours = hours;
-                      editing.startDate = _startDate!;
-                      editing.deadline = _deadline!;
-                      editing.colorValue = _pickedColor.value;
-                      editing.pending = true;
-                      editing.updatedAt = DateTime.now();
-                      await data.updateLocal(editing);
-                    }
-
-                    // If signed in try sync (migration + sync)
-                    if (_currentUserId != null) {
-                      try {
-                        await data.migrateLocalToUser(_currentUserId!);
-                        await data
-                            .syncBoth(userId: _currentUserId!)
-                            .timeout(syncTimeout);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Saved and synced')),
-                        );
-                      } catch (e) {
-                        debugPrint('Sync after add failed: $e');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Saved locally — sync failed: ${_shortError(e)}',
-                            ),
-                          ),
-                        );
-                      }
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Saved locally')),
-                      );
-                    }
-
-                    setState(() {});
-                    Navigator.pop(ctx);
-                  },
-                  child: Text(editing == null ? 'Add' : 'Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+                );
+              }).toList(),
+            ),
+        ],
+      ),
     );
   }
 
+  Widget _buildMonthPage(int page) {
+    final month = _monthFromPage(page);
+    final days = _daysForMonth(month);
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Text(
+            "${_monthName(month.month)} ${month.year}",
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ),
+
+        // Weekday row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: const [
+            _Weekday("Mon"),
+            _Weekday("Tue"),
+            _Weekday("Wed"),
+            _Weekday("Thu"),
+            _Weekday("Fri"),
+            _Weekday("Sat"),
+            _Weekday("Sun"),
+          ],
+        ),
+        const SizedBox(height: 10),
+
+        // Full Month Grid
+        Expanded(
+          child: GridView.builder(
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              childAspectRatio: 1,
+            ),
+            itemCount: days.length,
+            itemBuilder: (_, i) => _buildDay(days[i], month),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _monthName(int m) {
+    const names = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return names[m - 1];
+  }
+
+  // =====================================================
+  //                    PROJECT LIST
+  // =====================================================
+
   Widget _projectList() {
     final list = data.projects;
-
-    if (list.isEmpty) return const Center(child: Text('No projects yet.'));
+    if (list.isEmpty) {
+      return const Center(child: Text("No projects yet."));
+    }
 
     return ListView.builder(
       itemCount: list.length,
@@ -354,38 +211,9 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
             leading: CircleAvatar(backgroundColor: Color(p.colorValue)),
             title: Text(p.title),
             subtitle: Text(
-              '${p.dailyHours}h/day • ${_dayKey(p.startDate)} → ${_dayKey(p.deadline)}',
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () => _openAddDialog(editing: p),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete, color: Colors.redAccent),
-                  onPressed: () async {
-                    // remove local copy
-                    await data.deleteLocal(p.id);
-                    // also remove remote if we have current user
-                    if (_currentUserId != null) {
-                      try {
-                        await Supabase.instance.client
-                            .from('projects')
-                            .delete()
-                            .eq('id', p.id);
-                      } catch (e) {
-                        debugPrint('Remote delete failed: $e');
-                      }
-                    }
-                    setState(() {});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Project deleted')),
-                    );
-                  },
-                ),
-              ],
+              "${p.dailyHours}h/day • "
+              "${p.startDate.year}-${p.startDate.month}-${p.startDate.day} → "
+              "${p.deadline.year}-${p.deadline.month}-${p.deadline.day}",
             ),
           ),
         );
@@ -393,67 +221,9 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
     );
   }
 
-  Widget _fullCalendar() {
-    return TableCalendar(
-      focusedDay: _focused,
-      firstDay: DateTime(DateTime.now().year - 1),
-      lastDay: DateTime(DateTime.now().year + 3),
-      eventLoader: _eventsForDay,
-      selectedDayPredicate: (d) =>
-          _selected != null && _dayKey(_selected!) == _dayKey(d),
-      onDaySelected: (sel, foc) => setState(() {
-        _selected = sel;
-        _focused = foc;
-      }),
-      headerStyle: const HeaderStyle(
-        titleCentered: true,
-        formatButtonVisible: false,
-      ),
-      calendarBuilders: CalendarBuilders(
-        defaultBuilder: (_, day, __) => _dayMarker(day),
-      ),
-    );
-  }
-
-  Widget _dayMarker(DateTime day) {
-    final events = data.getAssignmentsFor(day);
-    final todayKey = _dayKey(DateTime.now());
-    final dayKey = _dayKey(day);
-
-    // Colors per your request:
-    // past -> black, future -> white, today -> theme color
-    final isToday = dayKey == todayKey;
-    final now = DateTime.now();
-    final isPast = day.isBefore(DateTime(now.year, now.month, now.day));
-    final textColor = isToday
-        ? Theme.of(context).colorScheme.primary
-        : (isPast ? Colors.black : Colors.white);
-
-    return Column(
-      children: [
-        Text(
-          '${day.day}',
-          style: TextStyle(fontWeight: FontWeight.w600, color: textColor),
-        ),
-        if (events.isNotEmpty)
-          Wrap(
-            spacing: 3,
-            children: events.take(4).map((p) {
-              // color dots without shadow
-              return Container(
-                width: 7,
-                height: 7,
-                margin: const EdgeInsets.only(top: 4),
-                decoration: BoxDecoration(
-                  color: Color(p.colorValue),
-                  shape: BoxShape.circle,
-                ),
-              );
-            }).toList(),
-          ),
-      ],
-    );
-  }
+  // =====================================================
+  //                     BUILD UI
+  // =====================================================
 
   @override
   Widget build(BuildContext context) {
@@ -463,97 +233,49 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
 
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Project Scheduler — Error')),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 56,
-                  color: Colors.redAccent,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Initialization failed',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(_error!, textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _initScheduler,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry'),
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  onPressed: () => setState(() => _error = null),
-                  icon: const Icon(Icons.data_saver_off),
-                  label: const Text('Use local data'),
-                ),
-              ],
-            ),
-          ),
-        ),
+        appBar: AppBar(title: const Text("Scheduler Error")),
+        body: Center(child: Text(_error!)),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Project Scheduler'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.sync),
-            onPressed: () async {
-              if (_currentUserId == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Not signed in — cannot sync.')),
-                );
-                return;
-              }
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Syncing...')));
-              try {
-                // migrate any local "local" items to real user id, then sync
-                await data.migrateLocalToUser(_currentUserId!);
-                await data
-                    .syncBoth(userId: _currentUserId!)
-                    .timeout(syncTimeout);
-                setState(() {});
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Sync complete')));
-              } catch (e) {
-                debugPrint('Manual sync failed: $e');
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Sync failed: ${_shortError(e)}')),
-                );
-              }
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text("Project Scheduler")),
       body: Column(
         children: [
-          Padding(padding: const EdgeInsets.all(12), child: _fullCalendar()),
-          Expanded(child: _projectList()),
+          // Calendar (60% of screen)
+          Expanded(
+            flex: 6,
+            child: PageView.builder(
+              controller: _pageController,
+              onPageChanged: (p) => setState(() => _currentPage = p),
+              itemBuilder: (_, pageIndex) => _buildMonthPage(pageIndex),
+            ),
+          ),
+
+          // List (40% of screen)
+          Expanded(flex: 4, child: _projectList()),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openAddDialog(),
-        child: const Icon(Icons.add),
       ),
     );
   }
+}
+
+class _Weekday extends StatelessWidget {
+  final String label;
+  const _Weekday(this.label);
 
   @override
-  void dispose() {
-    _titleCtrl.dispose();
-    _hoursCtrl.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Center(
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      ),
+    );
   }
 }

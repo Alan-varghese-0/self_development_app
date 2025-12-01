@@ -1,7 +1,7 @@
 // lib/presentation/screens/user/user_home_page.dart
 import 'package:flutter/material.dart';
-import 'package:percent_indicator/percent_indicator.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:self_develpoment_app/speech_training/speech_levels_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // pages
@@ -122,7 +122,7 @@ class _UserHomePageState extends State<UserHomePage>
       return false;
     }).toList();
 
-    _expandedFourWeeks = _todayTasks.isEmpty;
+    // _expandedFourWeeks = _todayTasks.isEmpty;
     _computeCalendarDays();
     if (mounted) setState(() {});
   }
@@ -143,7 +143,7 @@ class _UserHomePageState extends State<UserHomePage>
       now.day,
     ).subtract(Duration(days: daysToSunday));
 
-    final rows = _expandedFourWeeks ? 4 : 2;
+    final rows = 2;
     final totalDays = rows * 7;
 
     _calendarDays = List.generate(
@@ -338,7 +338,7 @@ class _UserHomePageState extends State<UserHomePage>
   // -----------------------
 
   Widget _calendarGrid(ThemeData theme) {
-    final rows = _expandedFourWeeks ? 4 : 2;
+    final rows = 2;
     final totalDays = rows * 7;
 
     return FadeTransition(
@@ -613,6 +613,12 @@ class _UserHomePageState extends State<UserHomePage>
                 page: const MultiProjectSchedulerPage(),
               ),
               _QuickCard(
+                icon: Icons.checklist_rounded,
+                title: "To-Do List",
+                scheme: scheme,
+                page: const TodoPage(),
+              ),
+              _QuickCard(
                 icon: Icons.menu_book_rounded,
                 title: "Audiobooks",
                 scheme: scheme,
@@ -622,13 +628,7 @@ class _UserHomePageState extends State<UserHomePage>
                 icon: Icons.record_voice_over_rounded,
                 title: "Speech Training",
                 scheme: scheme,
-                page: const AudiobooksPage(),
-              ),
-              _QuickCard(
-                icon: Icons.checklist_rounded,
-                title: "To-Do List",
-                scheme: scheme,
-                page: const TodoPage(),
+                page: const SpeechLevelsPage(),
               ),
             ],
           ),
@@ -739,17 +739,17 @@ class _UserHomePageState extends State<UserHomePage>
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          // quick entry — open TodoPage
-          await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TodoPage()),
-          );
-          _computeTodayTasks();
-        },
-        child: const Icon(Icons.add),
-      ),
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: () async {
+      //     // quick entry — open TodoPage
+      //     await Navigator.push(
+      //       context,
+      //       MaterialPageRoute(builder: (_) => const TodoPage()),
+      //     );
+      //     _computeTodayTasks();
+      //   },
+      //   child: const Icon(Icons.add),
+      // ),
     );
   }
 }

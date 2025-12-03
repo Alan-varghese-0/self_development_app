@@ -1,6 +1,7 @@
 // lib/presentation/screens/user/user_home_page.dart
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:self_develpoment_app/presentation/screens/admin/admin_pdfs_page.dart';
 import 'package:self_develpoment_app/speech_training/speech_levels_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -622,11 +623,11 @@ class _UserHomePageState extends State<UserHomePage>
                 icon: Icons.menu_book_rounded,
                 title: "Audiobooks",
                 scheme: scheme,
-                page: const AudiobooksPage(),
+                page: const AdminPDFsPage(),
               ),
               _QuickCard(
                 icon: Icons.record_voice_over_rounded,
-                title: "Speech Training",
+                title: "Speech",
                 scheme: scheme,
                 page: const SpeechLevelsPage(),
               ),

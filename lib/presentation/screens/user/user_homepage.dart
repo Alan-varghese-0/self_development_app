@@ -4,6 +4,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:self_develpoment_app/presentation/screens/admin/admin_pdfs_page.dart';
 import 'package:self_develpoment_app/speech_training/speech_levels_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:iconsax/iconsax.dart';
 
 // pages
 import 'package:self_develpoment_app/to-dos/todo-page.dart';
@@ -37,7 +38,9 @@ class _UserHomePageState extends State<UserHomePage>
   String _userName = 'User';
   List<TodoHive> _todayTasks = [];
   List<DateTime> _calendarDays = [];
-  bool _expandedFourWeeks = false;
+  double _completionRate = 0.0;
+  int _totalTasks = 0;
+  int _completedTasks = 0;
 
   @override
   void initState() {
@@ -45,9 +48,9 @@ class _UserHomePageState extends State<UserHomePage>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 850),
+      duration: const Duration(milliseconds: 1000),
     );
-    Future.delayed(const Duration(milliseconds: 100), () {
+    Future.delayed(const Duration(milliseconds: 200), () {
       if (mounted) _controller.forward();
     });
 
@@ -92,6 +95,7 @@ class _UserHomePageState extends State<UserHomePage>
 
       _computeTodayTasks();
       _computeCalendarDays();
+      _computeCompletionRate();
     } catch (e, st) {
       debugPrint("Home setup error: $e\n$st");
     }
@@ -99,15 +103,17 @@ class _UserHomePageState extends State<UserHomePage>
     if (mounted) setState(() => _loading = false);
   }
 
-  // -------------------------------------------------------
-  // TODAY’S TASKS
-  // -------------------------------------------------------
+  void _computeCompletionRate() {
+    _totalTasks = _todayTasks.length;
+    _completedTasks = _todayTasks.where((t) => t.isDone).length;
+    _completionRate = _totalTasks > 0 ? _completedTasks / _totalTasks : 0.0;
+  }
 
   void _computeTodayTasks() {
     final all = _todo.todos;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final weekday = now.weekday; // 1..7 Mon→Sun
+    final weekday = now.weekday;
 
     _todayTasks = all.where((t) {
       if (t.repeatType == 'daily') return true;
@@ -123,21 +129,22 @@ class _UserHomePageState extends State<UserHomePage>
       return false;
     }).toList();
 
-    // _expandedFourWeeks = _todayTasks.isEmpty;
+    // Sort today's tasks by startTime (earlier first)
+    _todayTasks.sort((a, b) {
+      final ap = _parseTimeParts(a.startTime);
+      final bp = _parseTimeParts(b.startTime);
+      if (ap[0] != bp[0]) return ap[0].compareTo(bp[0]);
+      return ap[1].compareTo(bp[1]);
+    });
+
     _computeCalendarDays();
+    _computeCompletionRate();
     if (mounted) setState(() {});
   }
 
-  // -------------------------------------------------------
-  // CALENDAR DAYS (2 or 4 weeks, Sun→Sat)
-  // -------------------------------------------------------
-
   void _computeCalendarDays() {
     final now = DateTime.now();
-
-    // For Sunday-start week:
-    // Dart weekday: Mon=1 ... Sun=7. We want distance to Sunday.
-    final daysToSunday = now.weekday % 7; // Sun -> 0, Mon ->1, ... Sat->6
+    final daysToSunday = now.weekday % 7;
     final sunday = DateTime(
       now.year,
       now.month,
@@ -153,10 +160,6 @@ class _UserHomePageState extends State<UserHomePage>
     );
   }
 
-  // -------------------------------------------------------
-  // TIME PARSE + MISSED DETECTION
-  // -------------------------------------------------------
-
   List<int> _parseTimeParts(String hhmm) {
     final parts = hhmm.split(':');
     final h = int.tryParse(parts[0]) ?? 9;
@@ -166,14 +169,11 @@ class _UserHomePageState extends State<UserHomePage>
 
   bool _isMissed(TodoHive t) {
     final now = DateTime.now();
-    final parts = _parseTimeParts(t.time);
-    final hour = parts[0];
-    final minute = parts[1];
-
-    final due = DateTime(now.year, now.month, now.day, hour, minute);
-    final today = DateTime(now.year, now.month, now.day);
+    final parts = _parseTimeParts(t.endTime); // use endTime to decide missed
+    final due = DateTime(now.year, now.month, now.day, parts[0], parts[1]);
 
     if (t.repeatType == 'none') {
+      final today = DateTime(now.year, now.month, now.day);
       final created = DateTime(
         t.createdAt.year,
         t.createdAt.month,
@@ -196,31 +196,13 @@ class _UserHomePageState extends State<UserHomePage>
     return false;
   }
 
-  String _monthName(int m) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return months[m - 1];
-  }
-
   String _repeatSummary(TodoHive t) {
-    if (t.repeatType == 'none') return 'No repeat';
-    if (t.repeatType == 'daily') return 'Repeats daily';
+    if (t.repeatType == 'none') return 'One-time';
+    if (t.repeatType == 'daily') return 'Daily';
     if (t.repeatType == 'weekly') {
-      if (t.weekdays.isEmpty) return 'Repeats weekly';
+      if (t.weekdays.isEmpty) return 'Weekly';
       final names = t.weekdays.map((d) => _weekdayName(d)).join(', ');
-      return 'Repeats: $names';
+      return 'Weekly: $names';
     }
     return '';
   }
@@ -239,156 +221,260 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   // -----------------------
-  // Calendar cell + header + details sheet
+  // INSPIRING UI COMPONENTS
   // -----------------------
 
-  Widget _calendarCell(DateTime day) {
-    final assignments = _scheduler.getAssignmentsFor(day);
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dayKey = DateTime(day.year, day.month, day.day);
-
-    final isToday = dayKey.isAtSameMomentAs(today);
-    final isPast = dayKey.isBefore(today);
-
-    final textColor = isToday
-        ? Theme.of(context).colorScheme.primary
-        : (isPast ? Colors.black54 : Colors.white);
-
-    return GestureDetector(
-      onTap: () {
-        showModalBottomSheet(
-          context: context,
-          builder: (_) => _dayDetailSheet(day, assignments),
-        );
-      },
+  Widget _welcomeSection(ThemeData theme) {
+    return FadeTransition(
+      opacity: _anim(0),
       child: Container(
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(20), // Reduced padding
         decoration: BoxDecoration(
-          color: isPast
-              ? Colors.transparent
-              : Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: isToday
-              ? Border.all(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 1.6,
-                )
-              : null,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              theme.colorScheme.primary.withOpacity(0.15),
+              theme.colorScheme.secondary.withOpacity(0.08),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: Column(
+        child: Row(
           children: [
-            Text(
-              '${day.day}',
-              style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
-            ),
-            const SizedBox(height: 6),
-            if (assignments.isNotEmpty)
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: assignments.take(4).map((p) {
-                  return Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: Color(p.colorValue),
-                      shape: BoxShape.circle,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Welcome back,',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.7),
                     ),
-                  );
-                }).toList(),
-              )
-            else
-              const SizedBox(height: 8),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _userName,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '"The only limit is our doubts of today."',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 2,
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: 48, // Slightly smaller
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [
+                    theme.colorScheme.primary,
+                    theme.colorScheme.secondary,
+                  ],
+                ),
+              ),
+              child: Icon(
+                Iconsax.user,
+                color: theme.colorScheme.onPrimary,
+                size: 24,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _dayDetailSheet(DateTime day, List<ProjectHive> assignments) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${day.day} ${_monthName(day.month)} ${day.year}',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          if (assignments.isEmpty)
-            const Text('No projects scheduled for this day.')
-          else
-            ...assignments.map(
-              (p) => ListTile(
-                leading: CircleAvatar(backgroundColor: Color(p.colorValue)),
-                title: Text(p.title),
-                subtitle: Text('${p.dailyHours}h/day'),
-              ),
+  Widget _progressOverview(ThemeData theme) {
+    return FadeTransition(
+      opacity: _anim(1),
+      child: Container(
+        padding: const EdgeInsets.all(16), // Reduced padding
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
             ),
-        ],
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Today's Progress",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$_completedTasks/$_totalTasks',
+                    style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _CircularProgress(
+                    progress: _completionRate,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _StatItem(
+                        icon: Iconsax.tick_circle,
+                        label: 'Completed',
+                        value: '$_completedTasks tasks',
+                        color: Colors.green,
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 6),
+                      _StatItem(
+                        icon: Iconsax.clock,
+                        label: 'Pending',
+                        value: '${_totalTasks - _completedTasks} tasks',
+                        color: Colors.orange,
+                        theme: theme,
+                      ),
+                      const SizedBox(height: 6),
+                      _StatItem(
+                        icon: Iconsax.calendar,
+                        label: 'Weekly Streak',
+                        value: '5 days',
+                        color: theme.colorScheme.primary,
+                        theme: theme,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
-
-  // -----------------------
-  // Calendar header widget (Sun..Sat)
-  // -----------------------
 
   Widget _calendarGrid(ThemeData theme) {
     final rows = 2;
     final totalDays = rows * 7;
 
     return FadeTransition(
-      opacity: _anim(1),
+      opacity: _anim(2),
       child: Container(
-        padding: const EdgeInsets.all(0.5),
+        padding: const EdgeInsets.all(16), // Reduced padding
         decoration: BoxDecoration(
-          // Option C: fully white in light, near-black in dark
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.black
-              : Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Weekday header (Sun..Sat)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                _CalHeader('Sun'),
-                _CalHeader('Mon'),
-                _CalHeader('Tue'),
-                _CalHeader('Wed'),
-                _CalHeader('Thu'),
-                _CalHeader('Fri'),
-                _CalHeader('Sat'),
+              children: [
+                Text(
+                  "Schedule Overview",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceVariant,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '2 Weeks',
+                    style: theme.textTheme.labelSmall?.copyWith(fontSize: 11),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
+            // Weekday headers
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: const ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+                  .map(
+                    (day) => SizedBox(
+                      width: 36, // Fixed width for each day cell
+                      child: Center(
+                        child: Text(
+                          day,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 8),
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: totalDays,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 7,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 8,
-                childAspectRatio: .75,
+                mainAxisSpacing: 6, // Reduced spacing
+                crossAxisSpacing: 6,
+                childAspectRatio: 1.0, // Square cells
               ),
               itemBuilder: (context, index) {
                 final day = _calendarDays[index];
-                return _calendarCell(day);
+                return _calendarCell(day, theme);
               },
             ),
           ],
@@ -397,448 +483,691 @@ class _UserHomePageState extends State<UserHomePage>
     );
   }
 
-  // -----------------------
-  // Today's Tasks UI
-  // -----------------------
+  Widget _calendarCell(DateTime day, ThemeData theme) {
+    final assignments = _scheduler.getAssignmentsFor(day);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dayKey = DateTime(day.year, day.month, day.day);
+    final isToday = dayKey.isAtSameMomentAs(today);
+    final isPast = dayKey.isBefore(today);
 
-  Widget _todaysTasks(ThemeData theme) {
-    return FadeTransition(
-      opacity: _anim(2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Today's Tasks",
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (_todayTasks.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant,
-                borderRadius: BorderRadius.circular(12),
+    return GestureDetector(
+      onTap: () => _showDayDetailSheet(day, assignments),
+      child: Container(
+        width: 36, // Fixed width
+        height: 36, // Fixed height
+        decoration: BoxDecoration(
+          color: isToday
+              ? theme.colorScheme.primary.withOpacity(0.1)
+              : (isPast
+                    ? theme.colorScheme.surfaceVariant.withOpacity(0.3)
+                    : theme.colorScheme.surfaceVariant),
+          borderRadius: BorderRadius.circular(8), // Smaller radius
+          border: isToday
+              ? Border.all(color: theme.colorScheme.primary, width: 1.5)
+              : null,
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 14, // Smaller font
+                  fontWeight: FontWeight.w500,
+                  color: isToday
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.onSurface.withOpacity(
+                          isPast ? 0.4 : 0.8,
+                        ),
+                ),
               ),
-              child: const Text('No tasks for today.'),
-            )
-          else
-            Column(
-              children: _todayTasks.map((t) {
-                final missed = _isMissed(t);
-                final parts = _parseTimeParts(t.time);
-                final tod = TimeOfDay(
-                  hour: parts[0],
-                  minute: parts[1],
-                ).format(context);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
+              if (assignments.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  height: 3,
+                  width: 3,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                    color: Color(assignments.first.colorValue),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDayDetailSheet(DateTime day, List<ProjectHive> assignments) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${day.day} ${_monthName(day.month)} ${day.year}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Scheduled Projects',
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (assignments.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Icon(
+                      Iconsax.calendar_remove,
+                      size: 40,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withOpacity(0.3),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'No projects scheduled',
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.5),
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...assignments.map(
+                (p) => Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceVariant,
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     children: [
-                      GestureDetector(
-                        onTap: () async {
-                          if (missed) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "You can't complete a missed task",
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-                          await _todo.toggleDone(t);
-                          _computeTodayTasks();
-                        },
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: t.isDone
-                                ? theme.colorScheme.primary
-                                : Colors.transparent,
-                            border: Border.all(
-                              color: missed
-                                  ? Colors.grey.shade400
-                                  : (t.isDone
-                                        ? theme.colorScheme.primary
-                                        : Colors.grey),
-                            ),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Center(
-                            child: missed
-                                ? Icon(
-                                    Icons.block,
-                                    color: Colors.grey.shade500,
-                                    size: 18,
-                                  )
-                                : (t.isDone
-                                      ? const Icon(
-                                          Icons.check,
-                                          color: Colors.white,
-                                          size: 18,
-                                        )
-                                      : const SizedBox.shrink()),
-                          ),
+                      Container(
+                        width: 6,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Color(p.colorValue),
+                          borderRadius: BorderRadius.circular(3),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              t.title,
-                              style: TextStyle(
-                                decoration: t.isDone
-                                    ? TextDecoration.lineThrough
-                                    : null,
+                              p.title,
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w600,
+                                fontSize: 14,
                               ),
                             ),
-                            if (t.description != null &&
-                                t.description!.isNotEmpty)
-                              Text(
-                                t.description!,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                            const SizedBox(height: 4),
+                            Text(
+                              '${p.dailyHours}h per day',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withOpacity(0.6),
                               ),
-                            const SizedBox(height: 6),
-                            Row(
-                              children: [
-                                Text(
-                                  tod,
-                                  style: TextStyle(
-                                    color: Colors.grey.shade700,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  _repeatSummary(t),
-                                  style: TextStyle(
-                                    color: Colors.grey.shade600,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                if (missed) ...[
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade400,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Text(
-                                      'MISSED',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const TodoPage()),
-                          );
-                          _computeTodayTasks();
-                        },
-                      ),
                     ],
                   ),
-                );
-              }).toList(),
-            ),
-        ],
+                ),
+              ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }
 
-  // -----------------------
-  // Quick Access + Chart
-  // -----------------------
-
-  Widget _quickAccessGrid(ThemeData theme, ColorScheme scheme) {
-    return FadeTransition(
-      opacity: _anim(3),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Quick Access",
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          GridView.count(
-            shrinkWrap: true,
-            crossAxisCount: 2,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.15,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              _QuickCard(
-                icon: Icons.calendar_month_rounded,
-                title: "Scheduler",
-                scheme: scheme,
-                page: const MultiProjectSchedulerPage(),
-              ),
-              _QuickCard(
-                icon: Icons.checklist_rounded,
-                title: "To-Do List",
-                scheme: scheme,
-                page: const TodoPage(),
-              ),
-              _QuickCard(
-                icon: Icons.menu_book_rounded,
-                title: "Audiobooks",
-                scheme: scheme,
-                page: const AdminPDFsPage(),
-              ),
-              _QuickCard(
-                icon: Icons.record_voice_over_rounded,
-                title: "Speech Training",
-                scheme: scheme,
-                page: const SpeechLevelsPage(),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+  String _monthName(int m) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[m - 1];
   }
 
-  Widget _progressChart(ThemeData theme, ColorScheme scheme) {
-    // small demo bar chart
+  Widget _quickAccess(ThemeData theme) {
+    final cards = [
+      _QuickAccessCard(
+        title: "Schedule",
+        subtitle: "Plan projects",
+        icon: Iconsax.calendar_1,
+        color: const Color(0xFF4F46E5),
+        page: const MultiProjectSchedulerPage(),
+        anim: _anim(4),
+      ),
+      _QuickAccessCard(
+        title: "Tasks",
+        subtitle: "Manage to-dos",
+        icon: Iconsax.task_square,
+        color: const Color(0xFF059669),
+        page: const TodoPage(),
+        anim: _anim(5),
+      ),
+      _QuickAccessCard(
+        title: "Resources",
+        subtitle: "Learning materials",
+        icon: Iconsax.book_1,
+        color: const Color(0xFFDC2626),
+        page: const AdminPDFsPage(),
+        anim: _anim(6),
+      ),
+      _QuickAccessCard(
+        title: "Speech",
+        subtitle: "Training exercises",
+        icon: Iconsax.voice_cricle,
+        color: const Color(0xFF7C3AED),
+        page: const SpeechLevelsPage(),
+        anim: _anim(7),
+      ),
+    ];
+
     return FadeTransition(
       opacity: _anim(4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Progress Over Time",
+            "Quick Access",
             style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 120,
-            child: BarChart(
-              BarChartData(
-                gridData: const FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-                titlesData: const FlTitlesData(show: false),
-                barGroups: [
-                  _bar(0, 4, scheme.primary),
-                  _bar(1, 7, scheme.primary),
-                  _bar(2, 5, scheme.primary),
-                  _bar(3, 8, scheme.primary),
-                  _bar(4, 6, scheme.primary),
-                ],
-              ),
-            ),
+          GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.3, // Adjusted aspect ratio
+            physics: const NeverScrollableScrollPhysics(),
+            children: cards,
           ),
         ],
       ),
     );
   }
 
-  BarChartGroupData _bar(int x, double y, Color color) => BarChartGroupData(
-    x: x,
-    barRods: [
-      BarChartRodData(
-        toY: y,
-        color: color.withOpacity(0.85),
-        borderRadius: BorderRadius.circular(8),
-        width: 18,
+  Widget _weeklyProgress(ThemeData theme) {
+    return FadeTransition(
+      opacity: _anim(5),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  "Weekly Progress",
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Iconsax.more, size: 20),
+                  onPressed: () {},
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 120,
+              child: BarChart(
+                BarChartData(
+                  barTouchData: BarTouchData(enabled: true),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              days[value.toInt() % days.length],
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: theme.colorScheme.onSurface.withOpacity(
+                                  0.6,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                  ),
+                  gridData: const FlGridData(show: false),
+                  borderData: FlBorderData(show: false),
+                  barGroups: [
+                    BarChartGroupData(
+                      x: 0,
+                      barRods: [
+                        BarChartRodData(
+                          toY: 4,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          color: theme.colorScheme.primary.withOpacity(0.8),
+                        ),
+                      ],
+                    ),
+                    BarChartGroupData(
+                      x: 1,
+                      barRods: [
+                        BarChartRodData(
+                          toY: 7,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          color: theme.colorScheme.primary.withOpacity(0.8),
+                        ),
+                      ],
+                    ),
+                    BarChartGroupData(
+                      x: 2,
+                      barRods: [
+                        BarChartRodData(
+                          toY: 5,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          color: theme.colorScheme.primary.withOpacity(0.8),
+                        ),
+                      ],
+                    ),
+                    BarChartGroupData(
+                      x: 3,
+                      barRods: [
+                        BarChartRodData(
+                          toY: 8,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          color: theme.colorScheme.primary.withOpacity(0.8),
+                        ),
+                      ],
+                    ),
+                    BarChartGroupData(
+                      x: 4,
+                      barRods: [
+                        BarChartRodData(
+                          toY: 6,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          color: theme.colorScheme.primary.withOpacity(0.8),
+                        ),
+                      ],
+                    ),
+                    BarChartGroupData(
+                      x: 5,
+                      barRods: [
+                        BarChartRodData(
+                          toY: 9,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          color: theme.colorScheme.primary.withOpacity(0.8),
+                        ),
+                      ],
+                    ),
+                    BarChartGroupData(
+                      x: 6,
+                      barRods: [
+                        BarChartRodData(
+                          toY: 7,
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          color: theme.colorScheme.primary.withOpacity(0.8),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ],
-  );
-
-  // -----------------------
-  // Build
-  // -----------------------
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
 
-    if (_loading)
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-
-    return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      appBar: AppBar(
+    if (_loading) {
+      return Scaffold(
         backgroundColor: theme.colorScheme.surface,
-        elevation: 0,
-        title: const Text(
-          "Auvyra",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await _setup();
-        },
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              FadeTransition(
-                opacity: _anim(0),
-                child: Text(
-                  'Hello, $_userName 👋',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              _calendarGrid(theme),
-              const SizedBox(height: 18),
-              _todaysTasks(theme),
-              const SizedBox(height: 18),
-              _quickAccessGrid(theme, scheme),
-              const SizedBox(height: 18),
-              _progressChart(theme, scheme),
-              const SizedBox(height: 20),
-            ],
-          ),
-        ),
-      ),
-      // floatingActionButton: FloatingActionButton(
-      //   onPressed: () async {
-      //     // quick entry — open TodoPage
-      //     await Navigator.push(
-      //       context,
-      //       MaterialPageRoute(builder: (_) => const TodoPage()),
-      //     );
-      //     _computeTodayTasks();
-      //   },
-      //   child: const Icon(Icons.add),
-      // ),
-    );
-  }
-}
-
-// -----------------------------
-// Small supporting widgets
-// -----------------------------
-
-class _CalHeader extends StatelessWidget {
-  final String title;
-  const _CalHeader(this.title, {super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Center(
-        child: Text(
-          title,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickCard extends StatefulWidget {
-  final IconData icon;
-  final String title;
-  final ColorScheme scheme;
-  final Widget page;
-  const _QuickCard({
-    required this.icon,
-    required this.title,
-    required this.scheme,
-    required this.page,
-    super.key,
-  });
-
-  @override
-  State<_QuickCard> createState() => _QuickCardState();
-}
-
-class _QuickCardState extends State<_QuickCard>
-    with SingleTickerProviderStateMixin {
-  double scale = 1.0;
-  void _tapDown() => setState(() => scale = 0.95);
-  void _tapUp() => setState(() => scale = 1.0);
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _tapDown(),
-      onTapCancel: _tapUp,
-      onTapUp: (_) {
-        _tapUp();
-        Navigator.push(context, MaterialPageRoute(builder: (_) => widget.page));
-      },
-      child: AnimatedScale(
-        scale: scale,
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: widget.scheme.surfaceVariant,
-            borderRadius: BorderRadius.circular(18),
-          ),
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundColor: widget.scheme.primaryContainer,
-                child: Icon(
-                  widget.icon,
-                  size: 28,
-                  color: widget.scheme.onPrimaryContainer,
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primary,
+                      theme.colorScheme.secondary,
+                    ],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Iconsax.radar, color: Colors.white, size: 24),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Loading your journey...',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 14,
                 ),
               ),
-              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surfaceVariant,
+      body: RefreshIndicator(
+        onRefresh: () async => await _setup(),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(16), // Reduced padding
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                _welcomeSection(theme),
+                const SizedBox(height: 16),
+                _progressOverview(theme),
+                const SizedBox(height: 16),
+                _calendarGrid(theme),
+
+                const SizedBox(height: 16),
+                _quickAccess(theme),
+                const SizedBox(height: 16),
+                _weeklyProgress(theme),
+                const SizedBox(height: 32), // Bottom padding for FAB
+              ],
+            ),
+          ),
+        ),
+      ),
+      // FLOATING ACTION BUTTON WITH PLUS SIGN
+      floatingActionButton: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        child: FloatingActionButton(
+          onPressed: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TodoPage()),
+            );
+            // refresh today's tasks after returning
+            _computeTodayTasks();
+          },
+          backgroundColor: theme.colorScheme.primary,
+          foregroundColor: theme.colorScheme.onPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(Icons.add, size: 24),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+}
+
+// -----------------------------
+// SUPPORTING WIDGETS
+// -----------------------------
+
+class _CircularProgress extends StatelessWidget {
+  final double progress;
+  final Color color;
+
+  const _CircularProgress({required this.progress, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        SizedBox(
+          width: 70, // Smaller
+          height: 70,
+          child: CircularProgressIndicator(
+            value: progress,
+            strokeWidth: 6,
+            backgroundColor: color.withOpacity(0.1),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+        Text(
+          '${(progress * 100).toInt()}%',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final ThemeData theme;
+
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.theme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: color),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                widget.title,
-                textAlign: TextAlign.center,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                  fontSize: 11,
+                ),
+              ),
+              Text(
+                value,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickAccessCard extends StatefulWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final Widget page;
+  final Animation<double> anim;
+
+  const _QuickAccessCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.page,
+    required this.anim,
+  });
+
+  @override
+  State<_QuickAccessCard> createState() => _QuickAccessCardState();
+}
+
+class _QuickAccessCardState extends State<_QuickAccessCard> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: widget.anim,
+      child: ScaleTransition(
+        scale: widget.anim,
+        child: GestureDetector(
+          onTapDown: (_) => setState(() => _isPressed = true),
+          onTapUp: (_) {
+            setState(() => _isPressed = false);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => widget.page),
+            );
+          },
+          onTapCancel: () => setState(() => _isPressed = false),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            transform: Matrix4.identity()..scale(_isPressed ? 0.95 : 1.0),
+            padding: const EdgeInsets.all(16), // Reduced padding
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  widget.color.withOpacity(0.75),
+                  widget.color.withOpacity(0.50),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: widget.color.withOpacity(0.1)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: widget.color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(widget.icon, color: Colors.white, size: 20),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  widget.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.subtitle,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(1),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

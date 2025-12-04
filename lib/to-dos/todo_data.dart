@@ -8,8 +8,9 @@ class TodoHive {
   String? description;
   bool isDone;
   DateTime createdAt;
-  // time stored as "HH:mm"
-  String time;
+  // start and end stored as "HH:mm"
+  String startTime;
+  String endTime;
   // repeatType: 'none' | 'daily' | 'weekly'
   String repeatType;
   // weekdays: List<int> with 1 = Monday ... 7 = Sunday
@@ -18,7 +19,8 @@ class TodoHive {
   TodoHive({
     required this.id,
     required this.title,
-    required this.time,
+    required this.startTime,
+    required this.endTime,
     this.description,
     this.isDone = false,
     DateTime? createdAt,
@@ -33,7 +35,8 @@ class TodoHive {
     'description': description,
     'isDone': isDone,
     'createdAt': createdAt.toIso8601String(),
-    'time': time,
+    'startTime': startTime,
+    'endTime': endTime,
     'repeatType': repeatType,
     'weekdays': weekdays,
   };
@@ -46,7 +49,8 @@ class TodoHive {
       isDone: m['isDone'] == true,
       createdAt:
           DateTime.tryParse(m['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      time: m['time']?.toString() ?? '09:00',
+      startTime: m['startTime']?.toString() ?? '09:00',
+      endTime: m['endTime']?.toString() ?? '10:00',
       repeatType: m['repeatType']?.toString() ?? 'none',
       weekdays: (m['weekdays'] is List)
           ? List<int>.from(
@@ -56,6 +60,21 @@ class TodoHive {
             )
           : <int>[],
     );
+  }
+
+  /// Duration in minutes
+  int get durationMinutes {
+    final s = _parse(startTime);
+    final e = _parse(endTime);
+    return e.difference(s).inMinutes;
+  }
+
+  static DateTime _parse(String hhmm) {
+    final parts = hhmm.split(':');
+    final h = int.tryParse(parts[0]) ?? 9;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, h, m);
   }
 }
 
@@ -98,13 +117,15 @@ class TodoData {
         // skip bad entries
       }
     }
-    // older first; UI reverses to show newest on top
+    // older first
+    out.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return out;
   }
 
   Future<TodoHive> addTodo({
     required String title,
-    required String time, // "HH:mm"
+    required String startTime, // "HH:mm"
+    required String endTime, // "HH:mm"
     String? description,
     String repeatType = 'none',
     List<int>? weekdays,
@@ -112,7 +133,8 @@ class TodoData {
     final t = TodoHive(
       id: _uuid.v4(),
       title: title,
-      time: time,
+      startTime: startTime,
+      endTime: endTime,
       description: description,
       repeatType: repeatType,
       weekdays: weekdays ?? [],
@@ -132,5 +154,124 @@ class TodoData {
 
   Future<void> delete(String id) async {
     await _box!.delete(id);
+  }
+
+  // ---------- Scheduling helpers (start/end aware) ----------
+
+  // parse "HH:mm" into today's DateTime at that time
+  DateTime _todayAt(String hhmm) {
+    final parts = hhmm.split(':');
+    final h = int.tryParse(parts[0]) ?? 9;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day, h, m);
+  }
+
+  // Returns tasks that will occur today (including daily/weekly/one-time created today)
+  List<TodoHive> tasksOccurringToday() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final all = todos;
+    final List<TodoHive> out = [];
+    for (final t in all) {
+      if (t.repeatType == 'daily') {
+        out.add(t);
+      } else if (t.repeatType == 'weekly') {
+        if (t.weekdays.contains(now.weekday)) out.add(t);
+      } else {
+        // 'none' — include if created on this day
+        final created = DateTime(
+          t.createdAt.year,
+          t.createdAt.month,
+          t.createdAt.day,
+        );
+        if (created.isAtSameMomentAs(today)) out.add(t);
+      }
+    }
+    // sort by start time
+    out.sort((a, b) {
+      final aStart = _todayAt(a.startTime);
+      final bStart = _todayAt(b.startTime);
+      return aStart.compareTo(bStart);
+    });
+    return out;
+  }
+
+  // Checks if a new appointment starting at startHHMM and ending at endHHMM overlaps any task today.
+  bool isOverlapping(String startHHMM, String endHHMM, {String? exceptId}) {
+    final newStart = _todayAt(startHHMM);
+    final newEnd = _todayAt(endHHMM);
+
+    if (!newStart.isBefore(newEnd)) {
+      // invalid range — treat as overlapping to prevent saving
+      return true;
+    }
+
+    final todays = tasksOccurringToday();
+    for (final t in todays) {
+      if (exceptId != null && t.id == exceptId) continue;
+      final tStart = _todayAt(t.startTime);
+      final tEnd = _todayAt(t.endTime);
+      if (newStart.isBefore(tEnd) && newEnd.isAfter(tStart)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Finds next available start time for today given a duration in minutes.
+  // Starts searching from 09:00 (or from now rounded up) in 15-minute steps up to 23:45.
+  // Returns HH:mm string of first non-overlapping start. If none found, returns "09:00".
+  String getNextAvailableStart(int durationMinutes) {
+    // start search at 09:00
+    DateTime candidate = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+      9,
+      0,
+    );
+
+    final lastPossibleStart = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+      23,
+      59,
+    );
+
+    // If candidate is before now, try to start from "now rounded up to next 15 minutes"
+    final now = DateTime.now();
+    if (candidate.isBefore(now)) {
+      final minutes = now.minute;
+      final remainder = minutes % 15;
+      final add = remainder == 0 ? 0 : (15 - remainder);
+      final rounded = now.add(Duration(minutes: add));
+      candidate = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        rounded.hour,
+        rounded.minute,
+      );
+    }
+
+    String fmt(DateTime d) {
+      final h = d.hour.toString().padLeft(2, '0');
+      final m = d.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+
+    while (!candidate.isAfter(lastPossibleStart)) {
+      final candStart = fmt(candidate);
+      final candEnd = fmt(candidate.add(Duration(minutes: durationMinutes)));
+      if (!isOverlapping(candStart, candEnd)) {
+        return candStart;
+      }
+      candidate = candidate.add(const Duration(minutes: 15));
+    }
+
+    // fallback
+    return "09:00";
   }
 }

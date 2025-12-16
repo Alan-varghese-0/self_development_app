@@ -12,7 +12,6 @@ class TodoPage extends StatefulWidget {
 class _TodoPageState extends State<TodoPage> {
   final TodoData todoData = TodoData();
   final GlobalKey<AnimatedListState> _listKey = GlobalKey();
-  final TextEditingController _searchCtrl = TextEditingController();
 
   bool _loading = true;
   List<TodoHive> _items = [];
@@ -26,7 +25,8 @@ class _TodoPageState extends State<TodoPage> {
   Future<void> _init() async {
     await todoData.init();
     setState(() {
-      _items = todoData.todos.reversed.toList(); // newest first
+      // newest first
+      _items = todoData.todos.reversed.toList();
       _loading = false;
     });
   }
@@ -104,7 +104,6 @@ class _TodoPageState extends State<TodoPage> {
       ),
     );
 
-    // undo
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Deleted "${removed.title}"'),
@@ -113,8 +112,9 @@ class _TodoPageState extends State<TodoPage> {
           onPressed: () async {
             final restored = await todoData.addTodo(
               title: removed.title,
+              startTime: removed.startTime,
+              endTime: removed.endTime,
               description: removed.description,
-              time: removed.time,
               repeatType: removed.repeatType,
               weekdays: removed.weekdays,
             );
@@ -153,10 +153,9 @@ class _TodoPageState extends State<TodoPage> {
 
   TimeOfDay _parseTime(String hhmm) {
     final parts = hhmm.split(':');
-    return TimeOfDay(
-      hour: int.tryParse(parts[0]) ?? 9,
-      minute: int.tryParse(parts[1]) ?? 0,
-    );
+    final h = int.tryParse(parts[0]) ?? 9;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return TimeOfDay(hour: h, minute: m);
   }
 
   DateTime _todayAt(TimeOfDay t) {
@@ -173,7 +172,7 @@ class _TodoPageState extends State<TodoPage> {
       t.createdAt.day,
     );
 
-    final due = _todayAt(_parseTime(t.time));
+    final due = _todayAt(_parseTime(t.endTime));
 
     if (t.repeatType == 'none') {
       if (created.isBefore(today) && !t.isDone) return true;
@@ -195,88 +194,136 @@ class _TodoPageState extends State<TodoPage> {
     return false;
   }
 
-  // tile UI
   Widget _todoTile(TodoHive t, int index) {
     final missed = _isMissed(t);
-    final tod = _parseTime(t.time).format(context);
+    final start = _parseTime(t.startTime).format(context);
+    final end = _parseTime(t.endTime).format(context);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: ListTile(
+      child: InkWell(
         onTap: () => _editItem(index),
-        leading: GestureDetector(
-          onTap: () {
-            if (missed) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Can't complete a missed task.")),
-              );
-              return;
-            }
-            _toggleDone(index);
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: t.isDone ? Colors.green : Colors.transparent,
-              border: Border.all(
-                color: missed
-                    ? Colors.grey.shade500
-                    : (t.isDone ? Colors.green : Colors.grey),
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: missed
-                ? Icon(Icons.block, size: 18, color: Colors.grey.shade500)
-                : (t.isDone
-                      ? const Icon(Icons.check, size: 18, color: Colors.white)
-                      : null),
-          ),
-        ),
-        title: Text(
-          t.title,
-          style: TextStyle(
-            decoration: t.isDone ? TextDecoration.lineThrough : null,
-            color: t.isDone ? Colors.grey : Colors.black87,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (t.description != null && t.description!.isNotEmpty)
-              Text(t.description!),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Text(
-                  "$tod  •  ${_repeatSummary(t)}",
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-                if (missed)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () {
+                  if (missed) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Can't complete a missed task."),
+                      ),
+                    );
+                    return;
+                  }
+                  _toggleDone(index);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 44,
+                  height: 44,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: t.isDone ? Colors.green : Colors.transparent,
+                    border: Border.all(
+                      color: missed
+                          ? Colors.grey.shade500
+                          : (t.isDone ? Colors.green : Colors.grey.shade400),
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade400,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'MISSED',
-                      style: TextStyle(color: Colors.white, fontSize: 11),
-                    ),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-              ],
-            ),
-          ],
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete, color: Colors.redAccent),
-          onPressed: () => _deleteItem(index),
+                  child: missed
+                      ? Icon(Icons.block, size: 18, color: Colors.grey.shade500)
+                      : (t.isDone
+                            ? const Icon(
+                                Icons.check,
+                                size: 18,
+                                color: Colors.white,
+                              )
+                            : null),
+                ),
+              ),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        decoration: t.isDone
+                            ? TextDecoration.lineThrough
+                            : null,
+                        color: t.isDone ? Colors.grey : Colors.black87,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+
+                    if (t.description != null && t.description!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          t.description!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(height: 6),
+
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            "$start — $end  •  ${_repeatSummary(t)}",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        if (missed) const SizedBox(width: 8),
+                        if (missed)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade400,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'MISSED',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              IconButton(
+                icon: const Icon(Icons.delete, color: Colors.redAccent),
+                onPressed: () => _deleteItem(index),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -293,7 +340,7 @@ class _TodoPageState extends State<TodoPage> {
       body: AnimatedList(
         key: _listKey,
         initialItemCount: _items.length,
-        padding: const EdgeInsets.only(bottom: 80),
+        padding: const EdgeInsets.only(bottom: 100),
         itemBuilder: (context, index, animation) {
           final item = _items[index];
           return SizeTransition(
@@ -312,9 +359,11 @@ class _TodoPageState extends State<TodoPage> {
   }
 }
 
-//
-// BOTTOM SHEET (Add/Edit)
-//
+/* ---------------------------
+   BOTTOM SHEET (Add / Edit)
+   - ensures TodoData is initialized before saving
+   - computes defaults asynchronously
+---------------------------- */
 class _AddEditSheet extends StatefulWidget {
   final TodoHive? editing;
   const _AddEditSheet({this.editing});
@@ -329,30 +378,55 @@ class _AddEditSheetState extends State<_AddEditSheet> {
 
   String _repeatType = "none";
   final Set<int> _weekdays = {};
-  TimeOfDay _selectedTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay _endTime = const TimeOfDay(hour: 10, minute: 0);
 
   bool _saving = false;
+  bool _preparedDefaults = false;
 
   @override
   void initState() {
     super.initState();
-
     if (widget.editing != null) {
       final t = widget.editing!;
       _titleCtrl.text = t.title;
       _descCtrl.text = t.description ?? "";
       _repeatType = t.repeatType;
       _weekdays.addAll(t.weekdays);
-      _selectedTime = _parseTime(t.time);
+      _startTime = _parseTime(t.startTime);
+      _endTime = _parseTime(t.endTime);
+      _preparedDefaults = true;
+    } else {
+      // prepare defaults async (ensures TodoData.init is awaited)
+      _prepareDefaults();
     }
   }
 
+  Future<void> _prepareDefaults() async {
+    final td = TodoData();
+    await td.init(); // make sure hive is open
+    // use helper to find next available start for 60 mins
+    final next = td.getNextAvailableStart(60);
+    final parsed = _parseTime(next);
+    final dt = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+      parsed.hour,
+      parsed.minute,
+    ).add(const Duration(minutes: 60));
+    setState(() {
+      _startTime = parsed;
+      _endTime = TimeOfDay(hour: dt.hour, minute: dt.minute);
+      _preparedDefaults = true;
+    });
+  }
+
   TimeOfDay _parseTime(String hhmm) {
-    final parts = hhmm.split(":");
-    return TimeOfDay(
-      hour: int.tryParse(parts[0]) ?? 9,
-      minute: int.tryParse(parts[1]) ?? 0,
-    );
+    final parts = hhmm.split(':');
+    final h = int.tryParse(parts[0]) ?? 9;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    return TimeOfDay(hour: h, minute: m);
   }
 
   String _formatTime(TimeOfDay t) {
@@ -361,12 +435,30 @@ class _AddEditSheetState extends State<_AddEditSheet> {
     return "$h:$m";
   }
 
-  Future<void> _pickTime() async {
+  Future<void> _pickStart() async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: _selectedTime,
+      initialTime: _startTime,
     );
-    if (picked != null) setState(() => _selectedTime = picked);
+    if (picked != null) {
+      setState(() {
+        _startTime = picked;
+        final s = DateTime(0, 0, 0, _startTime.hour, _startTime.minute);
+        final e = DateTime(0, 0, 0, _endTime.hour, _endTime.minute);
+        if (!e.isAfter(s)) {
+          final nd = s.add(const Duration(hours: 1));
+          _endTime = TimeOfDay(hour: nd.hour, minute: nd.minute);
+        }
+      });
+    }
+  }
+
+  Future<void> _pickEnd() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _endTime,
+    );
+    if (picked != null) setState(() => _endTime = picked);
   }
 
   DateTime _todayAt(TimeOfDay t) {
@@ -376,8 +468,8 @@ class _AddEditSheetState extends State<_AddEditSheet> {
 
   bool _isPastForNone() {
     final now = DateTime.now();
-    final chosen = _todayAt(_selectedTime);
-    return chosen.isBefore(now);
+    final chosenEnd = _todayAt(_endTime);
+    return chosenEnd.isBefore(now);
   }
 
   Future<void> _save() async {
@@ -395,6 +487,15 @@ class _AddEditSheetState extends State<_AddEditSheet> {
       return;
     }
 
+    final startDt = _todayAt(_startTime);
+    final endDt = _todayAt(_endTime);
+    if (!startDt.isBefore(endDt)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("End time must be after start time")),
+      );
+      return;
+    }
+
     if (_repeatType == "none" && _isPastForNone()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Cannot schedule past time")),
@@ -405,33 +506,64 @@ class _AddEditSheetState extends State<_AddEditSheet> {
     setState(() => _saving = true);
 
     final td = TodoData();
-    final tStr = _formatTime(_selectedTime);
+    await td
+        .init(); // <--- ensure hive is ready before add/update/overlap check
 
-    if (widget.editing == null) {
-      final created = await td.addTodo(
-        title: _titleCtrl.text.trim(),
-        description: _descCtrl.text.trim().isEmpty
-            ? null
-            : _descCtrl.text.trim(),
-        time: tStr,
-        repeatType: _repeatType,
-        weekdays: _weekdays.toList(),
+    final startStr = _formatTime(_startTime);
+    final endStr = _formatTime(_endTime);
+
+    // overlap check only for one-time tasks
+    if (_repeatType == "none") {
+      final exceptId = widget.editing?.id;
+      final overlapping = td.isOverlapping(
+        startStr,
+        endStr,
+        exceptId: exceptId,
       );
-      Navigator.pop(context, created);
-    } else {
-      final e = widget.editing!;
-      e.title = _titleCtrl.text.trim();
-      e.description = _descCtrl.text.trim().isEmpty
-          ? null
-          : _descCtrl.text.trim();
-      e.time = tStr;
-      e.repeatType = _repeatType;
-      e.weekdays = _weekdays.toList();
-      await td.updateTodo(e);
-      Navigator.pop(context, e);
+      if (overlapping) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("This time slot overlaps another task."),
+          ),
+        );
+        setState(() => _saving = false);
+        return;
+      }
     }
 
-    setState(() => _saving = false);
+    try {
+      if (widget.editing == null) {
+        final created = await td.addTodo(
+          title: _titleCtrl.text.trim(),
+          startTime: startStr,
+          endTime: endStr,
+          description: _descCtrl.text.trim().isEmpty
+              ? null
+              : _descCtrl.text.trim(),
+          repeatType: _repeatType,
+          weekdays: _weekdays.toList(),
+        );
+        Navigator.pop(context, created);
+      } else {
+        final e = widget.editing!;
+        e.title = _titleCtrl.text.trim();
+        e.description = _descCtrl.text.trim().isEmpty
+            ? null
+            : _descCtrl.text.trim();
+        e.startTime = startStr;
+        e.endTime = endStr;
+        e.repeatType = _repeatType;
+        e.weekdays = _weekdays.toList();
+        await td.updateTodo(e);
+        Navigator.pop(context, e);
+      }
+    } catch (ex) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Failed to save: $ex")));
+    } finally {
+      setState(() => _saving = false);
+    }
   }
 
   Widget _weekdayChip(int dow, String label) {
@@ -454,6 +586,23 @@ class _AddEditSheetState extends State<_AddEditSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // if defaults haven't been prepared yet, show a small loader to avoid weird defaults
+    if (!_preparedDefaults) {
+      return SizedBox(
+        height: 220,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text("Preparing..."),
+            ],
+          ),
+        ),
+      );
+    }
 
     return SingleChildScrollView(
       padding: EdgeInsets.only(
@@ -501,29 +650,36 @@ class _AddEditSheetState extends State<_AddEditSheet> {
           ),
           const SizedBox(height: 20),
 
-          //
-          // TIME
-          //
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              "Time",
+              "Start",
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
           const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: _pickTime,
-            child: Text("Select Time: ${_selectedTime.format(context)}"),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _pickStart,
+                  child: Text("Start: ${_startTime.format(context)}"),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _pickEnd,
+                  child: Text("End: ${_endTime.format(context)}"),
+                ),
+              ),
+            ],
           ),
 
           const SizedBox(height: 20),
 
-          //
-          // REPEAT
-          //
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -540,7 +696,7 @@ class _AddEditSheetState extends State<_AddEditSheet> {
             value: "none",
             groupValue: _repeatType,
             onChanged: (v) {
-              FocusScope.of(context).unfocus(); // FIX
+              FocusScope.of(context).unfocus();
               setState(() => _repeatType = v!);
             },
           ),
@@ -550,7 +706,7 @@ class _AddEditSheetState extends State<_AddEditSheet> {
             value: "daily",
             groupValue: _repeatType,
             onChanged: (v) {
-              FocusScope.of(context).unfocus(); // FIX
+              FocusScope.of(context).unfocus();
               setState(() => _repeatType = v!);
             },
           ),
@@ -560,7 +716,7 @@ class _AddEditSheetState extends State<_AddEditSheet> {
             value: "weekly",
             groupValue: _repeatType,
             onChanged: (v) {
-              FocusScope.of(context).unfocus(); // FIX
+              FocusScope.of(context).unfocus();
               setState(() => _repeatType = v!);
             },
           ),

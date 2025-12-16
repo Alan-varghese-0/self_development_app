@@ -61,6 +61,7 @@ class _SignupState extends State<Signup> {
         'id': userId,
         'name': name,
         'email': email,
+        "password": password,
         'role': 'user',
       });
 

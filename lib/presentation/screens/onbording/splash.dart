@@ -52,7 +52,7 @@ class _SplashState extends State<Splash> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.hail_outlined, size: 180),
+              Image.asset('assets/logo/Auvyra.png', width: 200, height: 200),
               const SizedBox(height: 20),
               const Text(
                 'auvyra',

@@ -8,12 +8,9 @@ class TodoHive {
   String? description;
   bool isDone;
   DateTime createdAt;
-  // start and end stored as "HH:mm"
   String startTime;
   String endTime;
-  // repeatType: 'none' | 'daily' | 'weekly'
   String repeatType;
-  // weekdays: List<int> with 1 = Monday ... 7 = Sunday
   List<int> weekdays;
 
   TodoHive({
@@ -41,91 +38,44 @@ class TodoHive {
     'weekdays': weekdays,
   };
 
-  static TodoHive fromMap(Map m) {
-    return TodoHive(
-      id: m['id']?.toString() ?? const Uuid().v4(),
-      title: m['title']?.toString() ?? '',
-      description: m['description']?.toString(),
-      isDone: m['isDone'] == true,
-      createdAt:
-          DateTime.tryParse(m['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      startTime: m['startTime']?.toString() ?? '09:00',
-      endTime: m['endTime']?.toString() ?? '10:00',
-      repeatType: m['repeatType']?.toString() ?? 'none',
-      weekdays: (m['weekdays'] is List)
-          ? List<int>.from(
-              (m['weekdays'] as List)
-                  .map((e) => int.tryParse(e.toString()) ?? 0)
-                  .where((v) => v >= 1 && v <= 7),
-            )
-          : <int>[],
-    );
-  }
-
-  /// Duration in minutes
-  int get durationMinutes {
-    final s = _parse(startTime);
-    final e = _parse(endTime);
-    return e.difference(s).inMinutes;
-  }
-
-  static DateTime _parse(String hhmm) {
-    final parts = hhmm.split(':');
-    final h = int.tryParse(parts[0]) ?? 9;
-    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day, h, m);
-  }
+  static TodoHive fromMap(Map m) => TodoHive(
+    id: m['id'],
+    title: m['title'],
+    description: m['description'],
+    isDone: m['isDone'] == true,
+    createdAt: DateTime.parse(m['createdAt']),
+    startTime: m['startTime'],
+    endTime: m['endTime'],
+    repeatType: m['repeatType'],
+    weekdays: List<int>.from(m['weekdays'] ?? []),
+  );
 }
 
 class TodoData {
   static const _boxName = 'todo_box';
-  final Uuid _uuid = const Uuid();
   static final TodoData _instance = TodoData._internal();
   factory TodoData() => _instance;
   TodoData._internal();
 
+  final Uuid _uuid = const Uuid();
   Box? _box;
   bool _initialized = false;
 
   Future<void> init() async {
     if (_initialized) return;
     await Hive.initFlutter();
-    try {
-      _box = await Hive.openBox(_boxName);
-    } catch (e) {
-      // try recreate if open failed
-      await Hive.deleteBoxFromDisk(_boxName);
-      _box = await Hive.openBox(_boxName);
-    }
+    _box = await Hive.openBox(_boxName);
     _initialized = true;
   }
 
-  List<TodoHive> get todos {
-    if (_box == null) return [];
-    final out = <TodoHive>[];
-    for (final v in _box!.values) {
-      try {
-        if (v is Map) {
-          out.add(TodoHive.fromMap(Map<String, dynamic>.from(v)));
-        } else if (v is TodoHive) {
-          out.add(v);
-        } else {
-          out.add(TodoHive.fromMap(Map<String, dynamic>.from(v as dynamic)));
-        }
-      } catch (_) {
-        // skip bad entries
-      }
-    }
-    // older first
-    out.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    return out;
-  }
+  List<TodoHive> get todos =>
+      _box!.values.map((e) => TodoHive.fromMap(Map.from(e))).toList();
 
+  // ✅ RETURNS TodoHive (needed for AnimatedList)
   Future<TodoHive> addTodo({
     required String title,
-    required String startTime, // "HH:mm"
-    required String endTime, // "HH:mm"
+    required String startTime,
+    required String endTime,
     String? description,
     String repeatType = 'none',
     List<int>? weekdays,
@@ -137,7 +87,7 @@ class TodoData {
       endTime: endTime,
       description: description,
       repeatType: repeatType,
-      weekdays: weekdays ?? [],
+      weekdays: weekdays,
     );
     await _box!.put(t.id, t.toMap());
     return t;
@@ -147,131 +97,70 @@ class TodoData {
     await _box!.put(t.id, t.toMap());
   }
 
+  Future<void> delete(String id) async {
+    await _box!.delete(id);
+  }
+
   Future<void> toggleDone(TodoHive t) async {
     t.isDone = !t.isDone;
     await updateTodo(t);
   }
 
-  Future<void> delete(String id) async {
-    await _box!.delete(id);
-  }
+  // ---------- Helpers ----------
 
-  // ---------- Scheduling helpers (start/end aware) ----------
-
-  // parse "HH:mm" into today's DateTime at that time
   DateTime _todayAt(String hhmm) {
-    final parts = hhmm.split(':');
-    final h = int.tryParse(parts[0]) ?? 9;
-    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day, h, m);
+    final p = hhmm.split(':');
+    return DateTime.now().copyWith(
+      hour: int.parse(p[0]),
+      minute: int.parse(p[1]),
+    );
   }
 
-  // Returns tasks that will occur today (including daily/weekly/one-time created today)
-  List<TodoHive> tasksOccurringToday() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final all = todos;
-    final List<TodoHive> out = [];
-    for (final t in all) {
-      if (t.repeatType == 'daily') {
-        out.add(t);
-      } else if (t.repeatType == 'weekly') {
-        if (t.weekdays.contains(now.weekday)) out.add(t);
-      } else {
-        // 'none' — include if created on this day
-        final created = DateTime(
-          t.createdAt.year,
-          t.createdAt.month,
-          t.createdAt.day,
-        );
-        if (created.isAtSameMomentAs(today)) out.add(t);
-      }
-    }
-    // sort by start time
-    out.sort((a, b) {
-      final aStart = _todayAt(a.startTime);
-      final bStart = _todayAt(b.startTime);
-      return aStart.compareTo(bStart);
-    });
-    return out;
-  }
-
-  // Checks if a new appointment starting at startHHMM and ending at endHHMM overlaps any task today.
-  bool isOverlapping(String startHHMM, String endHHMM, {String? exceptId}) {
-    final newStart = _todayAt(startHHMM);
-    final newEnd = _todayAt(endHHMM);
-
-    if (!newStart.isBefore(newEnd)) {
-      // invalid range — treat as overlapping to prevent saving
-      return true;
-    }
-
-    final todays = tasksOccurringToday();
-    for (final t in todays) {
-      if (exceptId != null && t.id == exceptId) continue;
-      final tStart = _todayAt(t.startTime);
-      final tEnd = _todayAt(t.endTime);
-      if (newStart.isBefore(tEnd) && newEnd.isAfter(tStart)) {
-        return true;
-      }
+  bool isOverlapping(String start, String end, {String? exceptId}) {
+    final s = _todayAt(start);
+    final e = _todayAt(end);
+    for (final t in todos) {
+      if (t.id == exceptId) continue;
+      final ts = _todayAt(t.startTime);
+      final te = _todayAt(t.endTime);
+      if (s.isBefore(te) && e.isAfter(ts)) return true;
     }
     return false;
   }
 
-  // Finds next available start time for today given a duration in minutes.
-  // Starts searching from 09:00 (or from now rounded up) in 15-minute steps up to 23:45.
-  // Returns HH:mm string of first non-overlapping start. If none found, returns "09:00".
-  String getNextAvailableStart(int durationMinutes) {
-    // start search at 09:00
-    DateTime candidate = DateTime(
-      DateTime.now().year,
-      DateTime.now().month,
-      DateTime.now().day,
-      9,
-      0,
-    );
-
-    final lastPossibleStart = DateTime(
-      DateTime.now().year,
-      DateTime.now().month,
-      DateTime.now().day,
-      23,
-      59,
-    );
-
-    // If candidate is before now, try to start from "now rounded up to next 15 minutes"
-    final now = DateTime.now();
-    if (candidate.isBefore(now)) {
-      final minutes = now.minute;
-      final remainder = minutes % 15;
-      final add = remainder == 0 ? 0 : (15 - remainder);
-      final rounded = now.add(Duration(minutes: add));
-      candidate = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        rounded.hour,
-        rounded.minute,
-      );
+  String getNextAvailableStart(int minutes) {
+    DateTime t = DateTime.now().copyWith(hour: 9, minute: 0);
+    while (t.hour < 23) {
+      final s =
+          "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
+      final e = t.add(Duration(minutes: minutes));
+      final es =
+          "${e.hour.toString().padLeft(2, '0')}:${e.minute.toString().padLeft(2, '0')}";
+      if (!isOverlapping(s, es)) return s;
+      t = t.add(const Duration(minutes: 15));
     }
-
-    String fmt(DateTime d) {
-      final h = d.hour.toString().padLeft(2, '0');
-      final m = d.minute.toString().padLeft(2, '0');
-      return '$h:$m';
-    }
-
-    while (!candidate.isAfter(lastPossibleStart)) {
-      final candStart = fmt(candidate);
-      final candEnd = fmt(candidate.add(Duration(minutes: durationMinutes)));
-      if (!isOverlapping(candStart, candEnd)) {
-        return candStart;
-      }
-      candidate = candidate.add(const Duration(minutes: 15));
-    }
-
-    // fallback
     return "09:00";
+  }
+
+  // ✅ SAFE (used by weekly progress)
+  List<TodoHive> todosForDate(DateTime date) {
+    final day = DateTime(date.year, date.month, date.day);
+    final out = <TodoHive>[];
+
+    for (final t in todos) {
+      if (t.repeatType == 'daily')
+        out.add(t);
+      else if (t.repeatType == 'weekly' && t.weekdays.contains(date.weekday))
+        out.add(t);
+      else if (t.repeatType == 'none') {
+        final c = DateTime(
+          t.createdAt.year,
+          t.createdAt.month,
+          t.createdAt.day,
+        );
+        if (c == day) out.add(t);
+      }
+    }
+    return out;
   }
 }

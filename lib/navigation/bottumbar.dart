@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:self_develpoment_app/daily%20_challange/daily_challenge_page.dart';
 import 'package:self_develpoment_app/presentation/screens/profile/profile.dart';
 import 'package:self_develpoment_app/journal/dairy.dart';
 import 'package:self_develpoment_app/presentation/screens/user/progress.dart';
@@ -19,7 +20,7 @@ class _BottumbarState extends State<Bottumbar>
   final List<Widget> _screens = [
     UserHomePage(key: PageStorageKey("Home")),
     DiaryEntryPage(key: PageStorageKey('Diary')),
-    ProgressScreen(key: PageStorageKey('Progress')),
+    DailyChallengePage(key: PageStorageKey('challenge')),
     ProfilePage(key: PageStorageKey("Profile")),
   ];
 

@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:self_develpoment_app/presentation/screens/admin/admin_pdfs_page.dart';
+import 'package:self_develpoment_app/presentation/screens/user/weekly_progress_detail_page.dart';
 import 'package:self_develpoment_app/speech_training/speech_levels_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:iconsax/iconsax.dart';
@@ -42,6 +43,9 @@ class _UserHomePageState extends State<UserHomePage>
   int _totalTasks = 0;
   int _completedTasks = 0;
 
+  // Weekly progress: completed tasks this week (index 0 = Monday, index 6 = Sunday)
+  List<double> _weeklyCompletedTasks = List.filled(7, 0.0);
+
   @override
   void initState() {
     super.initState();
@@ -69,11 +73,9 @@ class _UserHomePageState extends State<UserHomePage>
     try {
       final client = Supabase.instance.client;
 
-      // init hive boxes
       await _todo.init();
       await _scheduler.init(supabaseClient: client);
 
-      // load user's name
       final session = client.auth.currentSession;
       if (session != null) {
         try {
@@ -96,6 +98,7 @@ class _UserHomePageState extends State<UserHomePage>
       _computeTodayTasks();
       _computeCalendarDays();
       _computeCompletionRate();
+      _computeWeeklyProgress(); // Will now fill data correctly Mon → Sun
     } catch (e, st) {
       debugPrint("Home setup error: $e\n$st");
     }
@@ -129,7 +132,6 @@ class _UserHomePageState extends State<UserHomePage>
       return false;
     }).toList();
 
-    // Sort today's tasks by startTime (earlier first)
     _todayTasks.sort((a, b) {
       final ap = _parseTimeParts(a.startTime);
       final bp = _parseTimeParts(b.startTime);
@@ -139,6 +141,71 @@ class _UserHomePageState extends State<UserHomePage>
 
     _computeCalendarDays();
     _computeCompletionRate();
+    _computeWeeklyProgress();
+    if (mounted) setState(() {});
+  }
+
+  // FIXED: Now fills _weeklyCompletedTasks with Monday (index 0) → Sunday (index 6)
+  // FIXED VERSION - Weekly Progress now correctly shows Monday to Sunday
+  // with today's completed tasks on the correct bar (e.g., Tuesday → second bar "T")
+
+  void _computeWeeklyProgress() {
+    final allTodos = _todo.todos;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final weekday = now.weekday; // 1=Mon ... 7=Sun
+
+    final Map<DateTime, int> completedPerDay = {};
+
+    // Find this week's Monday
+    final daysSinceMonday = weekday - 1; // e.g., Tuesday = 1
+    final thisMonday = today.subtract(Duration(days: daysSinceMonday));
+
+    // Initialize all 7 days of this week
+    for (int i = 0; i < 7; i++) {
+      final day = thisMonday.add(Duration(days: i));
+      final dayKey = DateTime(day.year, day.month, day.day);
+      completedPerDay[dayKey] = 0;
+    }
+
+    for (final task in allTodos) {
+      // One-time tasks: if created this week and completed
+      if (task.repeatType == 'none') {
+        final taskDate = DateTime(
+          task.createdAt.year,
+          task.createdAt.month,
+          task.createdAt.day,
+        );
+        if (taskDate.isAfter(thisMonday.subtract(const Duration(days: 1))) &&
+            taskDate.isBefore(thisMonday.add(const Duration(days: 7))) &&
+            task.isDone) {
+          final dayKey = taskDate;
+          if (completedPerDay.containsKey(dayKey)) {
+            completedPerDay[dayKey] = (completedPerDay[dayKey] ?? 0) + 1;
+          }
+        }
+      }
+      // Repeating tasks (daily/weekly): count today's completion if applicable and done
+      else if (task.isDone) {
+        bool appearsToday = false;
+        if (task.repeatType == 'daily') {
+          appearsToday = true;
+        } else if (task.repeatType == 'weekly') {
+          appearsToday = task.weekdays.contains(weekday);
+        }
+        if (appearsToday) {
+          completedPerDay[today] = (completedPerDay[today] ?? 0) + 1;
+        }
+      }
+    }
+
+    // Fill list: index 0 = Monday, 1=Tue, ..., 6=Sunday
+    _weeklyCompletedTasks = List.generate(7, (index) {
+      final day = thisMonday.add(Duration(days: index));
+      final dayKey = DateTime(day.year, day.month, day.day);
+      return (completedPerDay[dayKey] ?? 0).toDouble();
+    });
+
     if (mounted) setState(() {});
   }
 
@@ -169,7 +236,7 @@ class _UserHomePageState extends State<UserHomePage>
 
   bool _isMissed(TodoHive t) {
     final now = DateTime.now();
-    final parts = _parseTimeParts(t.endTime); // use endTime to decide missed
+    final parts = _parseTimeParts(t.endTime);
     final due = DateTime(now.year, now.month, now.day, parts[0], parts[1]);
 
     if (t.repeatType == 'none') {
@@ -183,9 +250,7 @@ class _UserHomePageState extends State<UserHomePage>
       return due.isBefore(now) && !t.isDone;
     }
 
-    if (t.repeatType == 'daily') {
-      return due.isBefore(now) && !t.isDone;
-    }
+    if (t.repeatType == 'daily') return due.isBefore(now) && !t.isDone;
 
     if (t.repeatType == 'weekly') {
       if (t.weekdays.contains(now.weekday)) {
@@ -221,14 +286,14 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   // -----------------------
-  // INSPIRING UI COMPONENTS
+  // UI COMPONENTS
   // -----------------------
 
   Widget _welcomeSection(ThemeData theme) {
     return FadeTransition(
       opacity: _anim(0),
       child: Container(
-        padding: const EdgeInsets.all(20), // Reduced padding
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -272,7 +337,7 @@ class _UserHomePageState extends State<UserHomePage>
               ),
             ),
             Container(
-              width: 48, // Slightly smaller
+              width: 48,
               height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
@@ -296,10 +361,11 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   Widget _progressOverview(ThemeData theme) {
+    // ... (unchanged - same as before)
     return FadeTransition(
       opacity: _anim(1),
       child: Container(
-        padding: const EdgeInsets.all(16), // Reduced padding
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
@@ -393,13 +459,14 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   Widget _calendarGrid(ThemeData theme) {
+    // ... (unchanged - full code from your original)
     final rows = 2;
     final totalDays = rows * 7;
 
     return FadeTransition(
       opacity: _anim(2),
       child: Container(
-        padding: const EdgeInsets.all(16), // Reduced padding
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
@@ -440,13 +507,12 @@ class _UserHomePageState extends State<UserHomePage>
               ],
             ),
             const SizedBox(height: 12),
-            // Weekday headers
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: const ['S', 'M', 'T', 'W', 'T', 'F', 'S']
                   .map(
                     (day) => SizedBox(
-                      width: 36, // Fixed width for each day cell
+                      width: 36,
                       child: Center(
                         child: Text(
                           day,
@@ -468,14 +534,12 @@ class _UserHomePageState extends State<UserHomePage>
               itemCount: totalDays,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 7,
-                mainAxisSpacing: 6, // Reduced spacing
+                mainAxisSpacing: 6,
                 crossAxisSpacing: 6,
-                childAspectRatio: 1.0, // Square cells
+                childAspectRatio: 1.0,
               ),
-              itemBuilder: (context, index) {
-                final day = _calendarDays[index];
-                return _calendarCell(day, theme);
-              },
+              itemBuilder: (context, index) =>
+                  _calendarCell(_calendarDays[index], theme),
             ),
           ],
         ),
@@ -484,6 +548,7 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   Widget _calendarCell(DateTime day, ThemeData theme) {
+    // ... (unchanged)
     final assignments = _scheduler.getAssignmentsFor(day);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -494,15 +559,15 @@ class _UserHomePageState extends State<UserHomePage>
     return GestureDetector(
       onTap: () => _showDayDetailSheet(day, assignments),
       child: Container(
-        width: 36, // Fixed width
-        height: 36, // Fixed height
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           color: isToday
               ? theme.colorScheme.primary.withOpacity(0.1)
               : (isPast
                     ? theme.colorScheme.surfaceVariant.withOpacity(0.3)
                     : theme.colorScheme.surfaceVariant),
-          borderRadius: BorderRadius.circular(8), // Smaller radius
+          borderRadius: BorderRadius.circular(8),
           border: isToday
               ? Border.all(color: theme.colorScheme.primary, width: 1.5)
               : null,
@@ -514,7 +579,7 @@ class _UserHomePageState extends State<UserHomePage>
               Text(
                 '${day.day}',
                 style: TextStyle(
-                  fontSize: 14, // Smaller font
+                  fontSize: 14,
                   fontWeight: FontWeight.w500,
                   color: isToday
                       ? theme.colorScheme.primary
@@ -541,118 +606,122 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   void _showDayDetailSheet(DateTime day, List<ProjectHive> assignments) {
+    final todos = _todo.todosForDate(day);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '${day.day} ${_monthName(day.month)} ${day.year}',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Scheduled Projects',
-              style: TextStyle(
-                fontSize: 13,
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (assignments.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    Icon(
-                      Iconsax.calendar_remove,
-                      size: 40,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.3),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'No projects scheduled',
-                      style: TextStyle(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.5),
+      builder: (_) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.55,
+          minChildSize: 0.35,
+          maxChildSize: 0.85,
+          builder: (context, scrollController) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // drag handle
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade400,
+                        borderRadius: BorderRadius.circular(4),
                       ),
                     ),
-                  ],
-                ),
-              )
-            else
-              ...assignments.map(
-                (p) => Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Color(p.colorValue),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              p.title,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
+
+                  // date header
+                  Text(
+                    "${_monthName(day.month)} ${day.day}",
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+
+                  Text(
+                    "Tasks & Schedule",
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      children: [
+                        // -------- TODOS --------
+                        if (todos.isNotEmpty) ...[
+                          Text(
+                            "To-Dos",
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          ...todos.map(
+                            (t) => ListTile(
+                              leading: Icon(
+                                t.isDone
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                color: t.isDone ? Colors.green : Colors.grey,
+                              ),
+                              title: Text(t.title),
+                              subtitle: Text("${t.startTime} – ${t.endTime}"),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+
+                        // -------- PROJECTS --------
+                        if (assignments.isNotEmpty) ...[
+                          Text(
+                            "Projects",
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 8),
+                          ...assignments.map(
+                            (p) => ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: Color(p.colorValue),
+                                radius: 6,
+                              ),
+                              title: Text(p.title),
+                              subtitle: Text("${p.dailyHours} hrs planned"),
+                            ),
+                          ),
+                        ],
+
+                        if (todos.isEmpty && assignments.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 40),
+                            child: Center(
+                              child: Text(
+                                "No tasks or projects for this day",
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: Colors.grey),
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${p.dailyHours}h per day',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurface.withOpacity(0.6),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -675,6 +744,7 @@ class _UserHomePageState extends State<UserHomePage>
   }
 
   Widget _quickAccess(ThemeData theme) {
+    // ... (unchanged - keep your original full code)
     final cards = [
       _QuickAccessCard(
         title: "Schedule",
@@ -727,7 +797,7 @@ class _UserHomePageState extends State<UserHomePage>
             crossAxisCount: 2,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.3, // Adjusted aspect ratio
+            childAspectRatio: 1.3,
             physics: const NeverScrollableScrollPhysics(),
             children: cards,
           ),
@@ -736,6 +806,7 @@ class _UserHomePageState extends State<UserHomePage>
     );
   }
 
+  // FIXED Weekly Progress - now matches M T W T F S S labels perfectly
   Widget _weeklyProgress(ThemeData theme) {
     return FadeTransition(
       opacity: _anim(5),
@@ -765,8 +836,15 @@ class _UserHomePageState extends State<UserHomePage>
                   ),
                 ),
                 IconButton(
-                  icon: Icon(Iconsax.more, size: 20),
-                  onPressed: () {},
+                  icon: const Icon(Iconsax.more, size: 20),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => WeeklyProgressDetailPage(),
+                      ),
+                    );
+                  },
                   padding: EdgeInsets.zero,
                 ),
               ],
@@ -784,10 +862,13 @@ class _UserHomePageState extends State<UserHomePage>
                         showTitles: true,
                         getTitlesWidget: (value, meta) {
                           const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+                          final index = value.toInt();
+                          if (index < 0 || index >= days.length)
+                            return const Text('');
                           return Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: Text(
-                              days[value.toInt() % days.length],
+                              days[index],
                               style: TextStyle(
                                 fontSize: 10,
                                 color: theme.colorScheme.onSurface.withOpacity(
@@ -811,85 +892,19 @@ class _UserHomePageState extends State<UserHomePage>
                   ),
                   gridData: const FlGridData(show: false),
                   borderData: FlBorderData(show: false),
-                  barGroups: [
-                    BarChartGroupData(
-                      x: 0,
+                  barGroups: List.generate(7, (index) {
+                    return BarChartGroupData(
+                      x: index,
                       barRods: [
                         BarChartRodData(
-                          toY: 4,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(5),
+                          toY: _weeklyCompletedTasks[index],
+                          width: 12,
+                          borderRadius: BorderRadius.circular(6),
                           color: theme.colorScheme.primary.withOpacity(0.8),
                         ),
                       ],
-                    ),
-                    BarChartGroupData(
-                      x: 1,
-                      barRods: [
-                        BarChartRodData(
-                          toY: 7,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(5),
-                          color: theme.colorScheme.primary.withOpacity(0.8),
-                        ),
-                      ],
-                    ),
-                    BarChartGroupData(
-                      x: 2,
-                      barRods: [
-                        BarChartRodData(
-                          toY: 5,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(5),
-                          color: theme.colorScheme.primary.withOpacity(0.8),
-                        ),
-                      ],
-                    ),
-                    BarChartGroupData(
-                      x: 3,
-                      barRods: [
-                        BarChartRodData(
-                          toY: 8,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(5),
-                          color: theme.colorScheme.primary.withOpacity(0.8),
-                        ),
-                      ],
-                    ),
-                    BarChartGroupData(
-                      x: 4,
-                      barRods: [
-                        BarChartRodData(
-                          toY: 6,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(5),
-                          color: theme.colorScheme.primary.withOpacity(0.8),
-                        ),
-                      ],
-                    ),
-                    BarChartGroupData(
-                      x: 5,
-                      barRods: [
-                        BarChartRodData(
-                          toY: 9,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(5),
-                          color: theme.colorScheme.primary.withOpacity(0.8),
-                        ),
-                      ],
-                    ),
-                    BarChartGroupData(
-                      x: 6,
-                      barRods: [
-                        BarChartRodData(
-                          toY: 7,
-                          width: 10,
-                          borderRadius: BorderRadius.circular(5),
-                          color: theme.colorScheme.primary.withOpacity(0.8),
-                        ),
-                      ],
-                    ),
-                  ],
+                    );
+                  }),
                 ),
               ),
             ),
@@ -945,7 +960,7 @@ class _UserHomePageState extends State<UserHomePage>
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Padding(
-            padding: const EdgeInsets.all(16), // Reduced padding
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -955,18 +970,16 @@ class _UserHomePageState extends State<UserHomePage>
                 _progressOverview(theme),
                 const SizedBox(height: 16),
                 _calendarGrid(theme),
-
                 const SizedBox(height: 16),
                 _quickAccess(theme),
                 const SizedBox(height: 16),
                 _weeklyProgress(theme),
-                const SizedBox(height: 32), // Bottom padding for FAB
+                const SizedBox(height: 32),
               ],
             ),
           ),
         ),
       ),
-      // FLOATING ACTION BUTTON WITH PLUS SIGN
       floatingActionButton: Container(
         margin: const EdgeInsets.only(bottom: 16),
         child: FloatingActionButton(
@@ -975,8 +988,8 @@ class _UserHomePageState extends State<UserHomePage>
               context,
               MaterialPageRoute(builder: (_) => const TodoPage()),
             );
-            // refresh today's tasks after returning
             _computeTodayTasks();
+            _computeWeeklyProgress();
           },
           backgroundColor: theme.colorScheme.primary,
           foregroundColor: theme.colorScheme.onPrimary,
@@ -992,13 +1005,12 @@ class _UserHomePageState extends State<UserHomePage>
 }
 
 // -----------------------------
-// SUPPORTING WIDGETS
+// SUPPORTING WIDGETS (unchanged)
 // -----------------------------
 
 class _CircularProgress extends StatelessWidget {
   final double progress;
   final Color color;
-
   const _CircularProgress({required this.progress, required this.color});
 
   @override
@@ -1007,7 +1019,7 @@ class _CircularProgress extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         SizedBox(
-          width: 70, // Smaller
+          width: 70,
           height: 70,
           child: CircularProgressIndicator(
             value: progress,
@@ -1031,7 +1043,6 @@ class _StatItem extends StatelessWidget {
   final String value;
   final Color color;
   final ThemeData theme;
-
   const _StatItem({
     required this.icon,
     required this.label,
@@ -1087,7 +1098,6 @@ class _QuickAccessCard extends StatefulWidget {
   final Color color;
   final Widget page;
   final Animation<double> anim;
-
   const _QuickAccessCard({
     required this.title,
     required this.subtitle,
@@ -1123,7 +1133,7 @@ class _QuickAccessCardState extends State<_QuickAccessCard> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             transform: Matrix4.identity()..scale(_isPressed ? 0.95 : 1.0),
-            padding: const EdgeInsets.all(16), // Reduced padding
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topLeft,

@@ -1,9 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:self_develpoment_app/daily%20_challange/daily_challenge_page.dart';
+import 'package:self_develpoment_app/journal/pages/journal_list_page.dart';
 import 'package:self_develpoment_app/presentation/screens/profile/profile.dart';
-import 'package:self_develpoment_app/journal/dairy.dart';
-import 'package:self_develpoment_app/presentation/screens/user/progress.dart';
 import 'package:self_develpoment_app/presentation/screens/user/user_homepage.dart';
 
 class Bottumbar extends StatefulWidget {
@@ -19,7 +18,7 @@ class _BottumbarState extends State<Bottumbar>
 
   final List<Widget> _screens = [
     UserHomePage(key: PageStorageKey("Home")),
-    DiaryEntryPage(key: PageStorageKey('Diary')),
+    JournalListPage(key: PageStorageKey('Diary')),
     DailyChallengePage(key: PageStorageKey('challenge')),
     ProfilePage(key: PageStorageKey("Profile")),
   ];
@@ -115,18 +114,18 @@ class _BottumbarState extends State<Bottumbar>
                   final icons = [
                     Icons.home_outlined,
                     Icons.menu_book_outlined,
-                    Icons.signal_cellular_alt_outlined,
+                    Icons.check_circle_outline,
                     Icons.person_outline,
                   ];
 
                   final activeIcons = [
                     Icons.home,
                     Icons.menu_book_rounded,
-                    Icons.signal_cellular_alt,
+                    Icons.task_alt_rounded,
                     Icons.person,
                   ];
 
-                  final labels = ['Home', 'Diary', 'Progress', 'Profile'];
+                  final labels = ['Home', 'Diary', 'challange', 'Profile'];
 
                   final isSelected = _currentIndex == index;
 

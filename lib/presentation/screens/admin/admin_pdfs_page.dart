@@ -24,7 +24,6 @@ class _AdminPDFsPageState extends State<AdminPDFsPage> {
   Future<void> loadPDFs() async {
     try {
       final res = await supabase.from('pdf_notes').select();
-
       setState(() {
         pdfList = res;
         loading = false;
@@ -35,7 +34,6 @@ class _AdminPDFsPageState extends State<AdminPDFsPage> {
     }
   }
 
-  /// Extract just the filename from a full Supabase public URL
   String extractFileName(String fullUrl) {
     return fullUrl.split("/").last;
   }
@@ -43,10 +41,14 @@ class _AdminPDFsPageState extends State<AdminPDFsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0E1117),
       appBar: AppBar(
-        title: const Text("PDF Library"),
-        backgroundColor: Colors.black,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        title: const Text(
+          "PDF Library",
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
@@ -54,7 +56,7 @@ class _AdminPDFsPageState extends State<AdminPDFsPage> {
           ? const Center(
               child: Text(
                 "No PDFs uploaded",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(color: Colors.white54),
               ),
             )
           : ListView.builder(
@@ -64,62 +66,115 @@ class _AdminPDFsPageState extends State<AdminPDFsPage> {
                 final pdf = pdfList[index];
 
                 final title = pdf['title'] ?? "Untitled";
-                final category = pdf['category'] ?? "Unknown";
+                final category = pdf['category'] ?? "General";
                 final thumbUrl = pdf['thumbnail_url'];
-                final fileUrl = pdf['file_url']; // full URL
+                final fileUrl = pdf['file_url'];
                 final pdfId = pdf['id'];
 
                 final fileName = extractFileName(fileUrl);
 
-                return Card(
-                  color: Colors.white10,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(12),
-                    leading: thumbUrl != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              thumbUrl,
-                              width: 55,
-                              height: 55,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        : const Icon(
-                            Icons.picture_as_pdf,
-                            color: Colors.white,
-                            size: 45,
-                          ),
-                    title: Text(
-                      title,
-                      style: const TextStyle(color: Colors.white, fontSize: 18),
-                    ),
-                    subtitle: Text(
-                      category,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161B22),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.4),
+                        blurRadius: 10,
+                        offset: const Offset(0, 6),
                       ),
-                    ),
-                    trailing: const Icon(
-                      Icons.chevron_right,
-                      color: Colors.white,
-                    ),
+                    ],
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
                     onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => PdfAudioReaderPage(
-                            filePath: fileName, // ✔ CORRECT
+                            filePath: fileName,
                             pdfId: pdfId,
                             title: title,
                           ),
                         ),
                       );
                     },
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          // Thumbnail
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: thumbUrl != null
+                                ? Image.network(
+                                    thumbUrl,
+                                    width: 70,
+                                    height: 90,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(
+                                    width: 70,
+                                    height: 90,
+                                    color: Colors.white10,
+                                    child: const Icon(
+                                      Icons.picture_as_pdf,
+                                      color: Colors.redAccent,
+                                      size: 40,
+                                    ),
+                                  ),
+                          ),
+
+                          const SizedBox(width: 14),
+
+                          // Text content
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 6),
+
+                                // Category chip
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white10,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    category,
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const Icon(
+                            Icons.chevron_right,
+                            color: Colors.white54,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 );
               },

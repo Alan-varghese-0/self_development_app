@@ -2,30 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:self_develpoment_app/presentation/screens/auth/login/login.dart';
 import 'package:self_develpoment_app/presentation/screens/setting/avatar_setting.dart';
 import 'package:self_develpoment_app/presentation/screens/setting/color_setting.dart';
+import 'package:self_develpoment_app/presentation/screens/setting/change_pass.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class ProfilePage extends StatefulWidget {
+class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
-
-  @override
-  State<ProfilePage> createState() => _ProfilePageState();
-}
-
-class _ProfilePageState extends State<ProfilePage>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,36 +18,23 @@ class _ProfilePageState extends State<ProfilePage>
         centerTitle: true,
         elevation: 1,
         backgroundColor: theme.colorScheme.surface,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: theme.colorScheme.primary,
-          labelColor: theme.colorScheme.primary,
-          unselectedLabelColor: Colors.grey,
-          tabs: const [
-            Tab(icon: Icon(Icons.person_outline), text: "Overview"),
-            Tab(icon: Icon(Icons.emoji_events_outlined), text: "Achievements"),
-          ],
-        ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: const [_OverviewTab(), _AchievementsTab()],
-      ),
+      body: const _OverviewSection(),
     );
   }
 }
 
-//
-//  OVERVIEW TAB (STATEFUL)
-//
-class _OverviewTab extends StatefulWidget {
-  const _OverviewTab();
+// =====================================================
+// OVERVIEW SECTION
+// =====================================================
+class _OverviewSection extends StatefulWidget {
+  const _OverviewSection();
 
   @override
-  State<_OverviewTab> createState() => _OverviewTabState();
+  State<_OverviewSection> createState() => _OverviewSectionState();
 }
 
-class _OverviewTabState extends State<_OverviewTab> {
+class _OverviewSectionState extends State<_OverviewSection> {
   String? username;
   String? avatar;
   bool loading = true;
@@ -77,104 +45,101 @@ class _OverviewTabState extends State<_OverviewTab> {
     _loadUserData();
   }
 
+  bool get isDemoAccount {
+    final email = Supabase.instance.client.auth.currentUser?.email ?? '';
+    return email.contains('demo');
+  }
+
   Future<void> _loadUserData() async {
     final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
 
-    if (user != null) {
-      final profile = await Supabase.instance.client
-          .from('profiles')
-          .select('name, avatar')
-          .eq('id', user.id)
-          .single();
+    final profile = await Supabase.instance.client
+        .from('profiles')
+        .select('name, avatar')
+        .eq('id', user.id)
+        .maybeSingle();
 
-      setState(() {
-        username = profile['name'] ?? "User";
-        avatar = profile['avatar']; // nullable
-        loading = false;
-      });
-    }
+    setState(() {
+      username = profile?['name'] ?? "User";
+      avatar = profile?['avatar'];
+      loading = false;
+    });
   }
 
   Future<void> _logout(BuildContext context) async {
-    try {
-      await Supabase.instance.client.auth.signOut();
+    await Supabase.instance.client.auth.signOut();
+    if (!mounted) return;
 
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => Login()),
-        (route) => false,
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Logout failed: $e")));
-    }
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => Login()),
+      (_) => false,
+    );
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
     final theme = Theme.of(context);
 
-    final bool? shouldLogout = await showDialog<bool>(
+    final shouldLogout = await showDialog<bool>(
       context: context,
-      barrierDismissible: true,
-      builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text("Logout"),
+        content: const Text("Are you sure you want to sign out?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.logout_rounded,
-                  size: 60,
-                  color: theme.colorScheme.error,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  "Logout?",
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "Are you sure you want to sign out?",
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text("Cancel"),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.error,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text("Logout"),
-                    ),
-                  ],
-                ),
-              ],
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+              foregroundColor: Colors.white,
             ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Logout"),
           ),
-        );
-      },
+        ],
+      ),
     );
 
-    if (shouldLogout == true) {
-      await _logout(context);
-    }
+    if (shouldLogout == true) await _logout(context);
+  }
+
+  void _showDemo(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Demo Feature"),
+        content: const Text(
+          "This feature is shown for demonstration purposes "
+          "and will be available in a future update.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAbout(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: "Self Development App",
+      applicationVersion: "1.0.0 (Demo)",
+      applicationIcon: const Icon(Icons.self_improvement),
+      children: const [
+        SizedBox(height: 8),
+        Text(
+          "A self-development app focused on habits, learning, "
+          "and personal growth.",
+        ),
+      ],
+    );
   }
 
   @override
@@ -186,203 +151,249 @@ class _OverviewTabState extends State<_OverviewTab> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // AVATAR SECTION
-          GestureDetector(
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AvatarSelectionPage()),
-              );
-              _loadUserData(); // Refresh after avatar update
-            },
-            child: avatar == null
-                ? CircleAvatar(
-                    radius: 45,
-                    backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
-                    child: Text(
-                      username![0].toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
+          // ================= PROFILE HEADER =================
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  theme.colorScheme.primary.withOpacity(0.9),
+                  theme.colorScheme.secondary.withOpacity(0.9),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AvatarSelectionPage(),
                       ),
-                    ),
-                  )
-                : CircleAvatar(
-                    radius: 45,
-                    backgroundImage: AssetImage(avatar!),
+                    );
+                    _loadUserData();
+                  },
+                  child: CircleAvatar(
+                    radius: 36,
+                    backgroundColor: Colors.white,
+                    backgroundImage: avatar != null && avatar!.contains('.')
+                        ? AssetImage(avatar!)
+                        : null,
+                    child: avatar == null
+                        ? Text(
+                            username != null && username!.isNotEmpty
+                                ? username![0].toUpperCase()
+                                : "?",
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
+                          )
+                        : null,
                   ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        username ?? "User",
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        isDemoAccount ? "Demo account" : "Manage your account",
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 24),
 
+          // ================= ACCOUNT =================
           Text(
-            username ?? "User",
-            style: theme.textTheme.headlineSmall?.copyWith(
+            "Account",
+            style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 8),
+
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: const Text("Change Password"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ChangePasswordPage(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 0),
+                ListTile(
+                  leading: Icon(
+                    Icons.color_lens,
+                    color: theme.colorScheme.primary,
+                  ),
+                  title: const Text("App Color Theme"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ThemeSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // ================= APP & DEVICE (DEMO) =================
           Text(
-            "Growing every day 🌱",
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
+            "App & Device",
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 8),
 
-          const SizedBox(height: 20),
-
-          // STATS
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildStat("Level", "5", theme),
-              _buildStat("XP", "1240", theme),
-              _buildStat("Streak", "14 Days", theme),
-            ],
-          ),
-
-          const SizedBox(height: 30),
-
-          // EDIT PROFILE CARD
           Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: ListTile(
-              leading: Icon(
-                Icons.settings,
-                color: theme.colorScheme.primary,
-                size: 30,
-              ),
-              title: const Text("Edit Profile"),
-              subtitle: const Text("Update your personal information"),
-              onTap: () {},
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.security_outlined),
+                  title: const Text("Device Permissions"),
+                  subtitle: const Text("Camera, storage, microphone"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showDemo(context),
+                ),
+                const Divider(height: 0),
+                ListTile(
+                  leading: const Icon(Icons.accessibility_new_outlined),
+                  title: const Text("Accessibility"),
+                  subtitle: const Text("Text size, contrast"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showDemo(context),
+                ),
+                const Divider(height: 0),
+                ListTile(
+                  leading: const Icon(Icons.language_outlined),
+                  title: const Text("Language"),
+                  subtitle: const Text("English (Default)"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showDemo(context),
+                ),
+                const Divider(height: 0),
+                ListTile(
+                  leading: const Icon(Icons.help_outline),
+                  title: const Text("Help & Support"),
+                  subtitle: const Text("FAQs, contact"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showDemo(context),
+                ),
+                const Divider(height: 0),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text("About"),
+                  subtitle: const Text("App version & details"),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showAbout(context),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
 
-          // THEME SETTINGS
-          Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: ListTile(
-              leading: Icon(
-                Icons.color_lens,
-                color: theme.colorScheme.primary,
-                size: 30,
+          // ================= ACCOUNT STATUS =================
+          if (isDemoAccount) ...[
+            const SizedBox(height: 24),
+            Text(
+              "Account Status",
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
-              title: const Text("App Color Theme"),
-              subtitle: const Text("Customize your app colors"),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ThemeSettingsPage()),
-                );
-              },
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: ListTile(
+                leading: Icon(
+                  Icons.verified_user_outlined,
+                  color: Colors.orange.shade700,
+                ),
+                title: const Text("Demo Account"),
+                subtitle: const Text("Limited features • Temporary data"),
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    "DEMO",
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 24),
+
+          // ================= LOGOUT =================
+          Text(
+            "Danger Zone",
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: theme.colorScheme.error,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
-          // LOGOUT
           Card(
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            color: theme.colorScheme.error.withOpacity(0.05),
             child: ListTile(
-              leading: Icon(
-                Icons.logout,
-                color: theme.colorScheme.error,
-                size: 30,
-              ),
+              leading: Icon(Icons.logout, color: theme.colorScheme.error),
               title: const Text("Logout"),
-              subtitle: const Text("Sign out of your account"),
               onTap: () => _confirmLogout(context),
             ),
           ),
+
+          const SizedBox(height: 40),
         ],
       ),
-    );
-  }
-
-  Widget _buildStat(String label, String value, ThemeData theme) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: Colors.grey[600])),
-      ],
-    );
-  }
-}
-
-//
-// ACHIEVEMENTS TAB
-//
-class _AchievementsTab extends StatelessWidget {
-  const _AchievementsTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    final achievements = [
-      {
-        "title": "Fast Learner",
-        "desc": "Completed 5 modules in one week",
-        "icon": Icons.bolt,
-      },
-      {
-        "title": "Audio Explorer",
-        "desc": "Listened to 10 audiobooks",
-        "icon": Icons.headphones,
-      },
-      {
-        "title": "Consistent Performer",
-        "desc": "Maintained 7-day streak",
-        "icon": Icons.trending_up,
-      },
-    ];
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(20),
-      itemCount: achievements.length,
-      itemBuilder: (context, index) {
-        final a = achievements[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 2,
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
-              child: Icon(
-                a["icon"] as IconData,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-            title: Text(
-              a["title"].toString(),
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text(a["desc"].toString()),
-            trailing: const Icon(Icons.check_circle, color: Colors.green),
-          ),
-        );
-      },
     );
   }
 }

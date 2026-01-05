@@ -96,10 +96,9 @@ class _SignupState extends State<Signup> {
             child: Column(
               children: [
                 // Icon / Branding
-                const Icon(
-                  Icons.self_improvement_rounded,
-                  size: 70,
-                  color: Color(0xFF6A5AE0),
+                const Image(
+                  image: AssetImage("assets/logo/Auvyra.png"),
+                  height: 150,
                 ),
                 const SizedBox(height: 20),
 

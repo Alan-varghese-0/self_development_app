@@ -9,7 +9,6 @@ import 'package:iconsax/iconsax.dart';
 
 // pages
 import 'package:self_develpoment_app/to-dos/todo-page.dart';
-import 'package:self_develpoment_app/presentation/screens/user/audiobook.dart';
 import 'package:self_develpoment_app/scheduler/multi_project_scheduler_clean.dart';
 
 // data
@@ -42,6 +41,7 @@ class _UserHomePageState extends State<UserHomePage>
   double _completionRate = 0.0;
   int _totalTasks = 0;
   int _completedTasks = 0;
+  String? _avatar;
 
   // Weekly progress: completed tasks this week (index 0 = Monday, index 6 = Sunday)
   List<double> _weeklyCompletedTasks = List.filled(7, 0.0);
@@ -81,12 +81,13 @@ class _UserHomePageState extends State<UserHomePage>
         try {
           final profile = await client
               .from('profiles')
-              .select('name')
+              .select('name, avatar')
               .eq('id', session.user.id)
               .maybeSingle();
 
-          if (profile != null && profile['name'] != null) {
-            _userName = profile['name'].toString();
+          if (profile != null) {
+            _userName = profile['name'] ?? session.user.email ?? 'User';
+            _avatar = profile['avatar']; // 👈 NEW
           } else {
             _userName = session.user.email ?? 'User';
           }
@@ -336,22 +337,21 @@ class _UserHomePageState extends State<UserHomePage>
                 ],
               ),
             ),
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    theme.colorScheme.primary,
-                    theme.colorScheme.secondary,
-                  ],
-                ),
-              ),
-              child: Icon(
-                Iconsax.user,
-                color: theme.colorScheme.onPrimary,
-                size: 24,
+            GestureDetector(
+              onTap: () {
+                // Optional: Navigate to profile page later
+              },
+              child: CircleAvatar(
+                radius: 24,
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.2),
+                backgroundImage: _avatar != null ? AssetImage(_avatar!) : null,
+                child: _avatar == null
+                    ? Icon(
+                        Iconsax.user,
+                        color: theme.colorScheme.primary,
+                        size: 22,
+                      )
+                    : null,
               ),
             ),
           ],

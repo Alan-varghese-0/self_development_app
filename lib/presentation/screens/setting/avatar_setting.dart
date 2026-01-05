@@ -4,7 +4,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AvatarSelectionPage extends StatelessWidget {
   const AvatarSelectionPage({super.key});
 
-  final avatarList = const ["assets/avatars/sheep.png"];
+  final avatarList = const [
+    "assets/avatars/avatar_1.png",
+    "assets/avatars/avatar_2.png",
+    "assets/avatars/avatar_3.png",
+    "assets/avatars/avatar_4.png",
+    "assets/avatars/avatar_5.png",
+    "assets/avatars/avatar_6.png",
+    "assets/avatars/avatar_7.png",
+    "assets/avatars/avatar_8.png",
+    "assets/avatars/avatar_9.png",
+    "assets/avatar_1.png",
+  ];
 
   Future<void> _selectAvatar(BuildContext context, String avatarPath) async {
     final user = Supabase.instance.client.auth.currentUser;

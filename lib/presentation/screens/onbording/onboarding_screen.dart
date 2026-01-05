@@ -15,28 +15,28 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   final List<Map<String, String>> onboardingData = [
     {
-      'title': 'Access Educational Resources',
+      'title': 'Build Better Habits',
       'description':
-          'Explore a comprehensive library of video lectures, PDFs, and detailed notes at your fingertips.',
-      'image': 'assets/onboard1.png',
+          'Create daily routines, set goals, and stay consistent with simple, guided habits.',
+      'image': 'assets/b1.png',
     },
     {
-      'title': 'Engage in Learning Activities',
+      'title': 'Learn & Grow Daily',
       'description':
-          'Participate in interactive lessons, review materials, and discuss ideas with others.',
-      'image': 'assets/onboard2.png',
+          'Access self-improvement content like notes, PDFs, audio guides, and learning exercises.',
+      'image': 'assets/b2.png',
     },
     {
-      'title': 'Monitor Academic Progress',
+      'title': 'Track Your Progress',
       'description':
-          'Track milestones, achievements, and skill growth in one place.',
-      'image': 'assets/onboard3.png',
+          'Visualize your growth with progress charts, streaks, and weekly insights.',
+      'image': 'assets/b3.png',
     },
     {
-      'title': 'Upload Study Materials',
+      'title': 'Reflect & Improve',
       'description':
-          'Share your own educational content and contribute to the learning community.',
-      'image': 'assets/onboard4.png',
+          'Write journals, review your thoughts, and gain clarity with AI-powered reflections.',
+      'image': 'assets/b4.png',
     },
   ];
 
@@ -44,7 +44,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     if (currentPage < onboardingData.length - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 350),
-        curve: Curves.easeInOut,
+        curve: Curves.easeOutCubic,
       );
     } else {
       _completeOnboarding();
@@ -71,11 +71,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
       body: SafeArea(
         child: Column(
           children: [
-            // 🔹 Skip button
+            // Skip
             Align(
               alignment: Alignment.topRight,
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(16),
                 child: TextButton(
                   onPressed: _skip,
                   child: const Text(
@@ -90,7 +90,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
               ),
             ),
 
-            // 🔹 PageView content
+            // Pages
             Expanded(
               child: PageView.builder(
                 controller: _pageController,
@@ -100,68 +100,75 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 },
                 itemBuilder: (context, index) {
                   final item = onboardingData[index];
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Image.asset(item['image']!, height: 260),
-                        const SizedBox(height: 40),
-                        Text(
-                          item['title']!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
+                    child: AnimatedOpacity(
+                      opacity: currentPage == index ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 400),
+                      curve: Curves.easeInOut,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(item['image']!, height: 260),
+                          const SizedBox(height: 40),
+                          Text(
+                            item['title']!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E293B),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 15),
-                        Text(
-                          item['description']!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
-                            height: 1.5,
+                          const SizedBox(height: 16),
+                          Text(
+                            item['description']!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                              height: 1.5,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 },
               ),
             ),
 
-            // 🔹 Dots Indicator
+            // Dots
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
                 onboardingData.length,
                 (index) => AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
+                  duration: const Duration(milliseconds: 250),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: currentPage == index ? 12 : 8,
-                  height: currentPage == index ? 12 : 8,
+                  width: currentPage == index ? 18 : 8,
+                  height: 8,
                   decoration: BoxDecoration(
                     color: currentPage == index
                         ? const Color(0xFF6A5AE0)
                         : Colors.grey[400],
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 24),
 
-            // 🔹 Next / Get Started Button
+            const SizedBox(height: 28),
+
+            // Button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 50),
               child: ElevatedButton(
                 onPressed: _nextPage,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6A5AE0),
-                  minimumSize: const Size.fromHeight(50),
+                  minimumSize: const Size.fromHeight(52),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -174,6 +181,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 ),
               ),
             ),
+
             const SizedBox(height: 40),
           ],
         ),

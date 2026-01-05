@@ -64,12 +64,11 @@ class _LoginState extends State<Login> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(
-                    Icons.self_improvement_rounded,
-                    size: 80,
-                    color: Color(0xFF6A5AE0),
+                  const Image(
+                    image: AssetImage("assets/logo/Auvyra.png"),
+                    height: 150,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 5),
 
                   Text(
                     "Welcome Back",

@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" android:required="false"/>
     <application
-        android:label="self_develpoment_app"
+        android:label="Auvyra"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

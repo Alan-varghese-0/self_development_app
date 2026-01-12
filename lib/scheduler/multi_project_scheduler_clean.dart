@@ -1,8 +1,8 @@
-// lib/scheduler/multi_project_scheduler.dart
-
 import 'package:flutter/material.dart';
+import 'package:self_develpoment_app/scheduler/Ai_project_day.dart';
+import 'package:self_develpoment_app/scheduler/scheduler_data.dart';
+import 'package:self_develpoment_app/scheduler/add_project_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'scheduler_data.dart';
 
 class MultiProjectSchedulerPage extends StatefulWidget {
   const MultiProjectSchedulerPage({super.key});
@@ -47,10 +47,6 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
     if (mounted) setState(() => _loading = false);
   }
 
-  // =====================================================
-  //                    MONTH LOGIC
-  // =====================================================
-
   DateTime _monthFromPage(int page) {
     final now = DateTime.now();
     return DateTime(now.year, now.month + (page - 1000), 1);
@@ -58,7 +54,7 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
 
   List<DateTime> _daysForMonth(DateTime month) {
     final first = DateTime(month.year, month.month, 1);
-    final daysBefore = first.weekday - 1; // Mon = 1
+    final daysBefore = first.weekday - 1;
     final start = first.subtract(Duration(days: daysBefore));
 
     final list = <DateTime>[];
@@ -67,10 +63,6 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
     }
     return list;
   }
-
-  // =====================================================
-  //                 STYLING FOR EACH DAY
-  // =====================================================
 
   Widget _buildDay(DateTime day, DateTime month) {
     final events = data.getAssignmentsFor(day);
@@ -85,46 +77,113 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
     final isPast = day.isBefore(today);
     final isOutsideMonth = day.month != month.month;
 
-    Color textColor;
+    Color textColor = isToday
+        ? Theme.of(context).colorScheme.primary
+        : isOutsideMonth
+        ? Colors.grey
+        : Colors.black;
 
-    if (isToday) {
-      textColor = Theme.of(context).colorScheme.primary;
-    } else if (isOutsideMonth) {
-      textColor = Colors.grey;
-    } else if (isPast) {
-      textColor = Colors.black;
-    } else {
-      textColor = Colors.white;
-    }
-
-    return Container(
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        children: [
-          Text(
-            "${day.day}",
-            style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
-          ),
-          const SizedBox(height: 6),
-          if (events.isNotEmpty)
-            Wrap(
-              spacing: 3,
-              runSpacing: 3,
-              children: events.take(4).map((p) {
-                return Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: Color(p.colorValue),
-                    shape: BoxShape.circle,
-                  ),
-                );
-              }).toList(),
+    return InkWell(
+      onTap: events.isEmpty ? null : () => _showDayDetails(day, events),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+        child: Column(
+          children: [
+            Text(
+              "${day.day}",
+              style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
             ),
-        ],
+            const SizedBox(height: 6),
+            if (events.isNotEmpty)
+              Wrap(
+                spacing: 3,
+                runSpacing: 3,
+                children: events.take(4).map((p) {
+                  return Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: Color(p.colorValue),
+                      shape: BoxShape.circle,
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
       ),
     );
+  }
+
+  Future<void> _showDayDetails(DateTime day, List<ProjectHive> projects) async {
+    if (projects.isEmpty) return;
+
+    final project = projects.first;
+
+    try {
+      final aiDays = await Supabase.instance.client
+          .from('ai_project_days')
+          .select()
+          .eq('project_id', project.id)
+          .eq('date', data.formatDate(day));
+
+      if (aiDays.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No tasks scheduled for this day.')),
+        );
+        return;
+      }
+
+      final Map<String, dynamic> row = aiDays.first;
+      AiProjectDay dayData = AiProjectDay.fromMap(row);
+      List<bool> localTaskStatus = List.from(dayData.taskStatus);
+
+      showDialog(
+        context: context,
+        builder: (_) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text('${project.title} – ${dayData.title}'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: dayData.tasks.length,
+                itemBuilder: (context, i) {
+                  return CheckboxListTile(
+                    title: Text(dayData.tasks[i]),
+                    value: localTaskStatus[i],
+                    onChanged: (bool? value) async {
+                      if (value == null) return;
+                      setDialogState(() => localTaskStatus[i] = value);
+
+                      // Update in Supabase
+                      localTaskStatus[i] = value;
+                      await Supabase.instance.client
+                          .from('ai_project_days')
+                          .update({'task_status': localTaskStatus})
+                          .eq('id', dayData.id);
+                    },
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
   }
 
   Widget _buildMonthPage(int page) {
@@ -140,8 +199,6 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
         ),
-
-        // Weekday row
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: const [
@@ -155,8 +212,6 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
           ],
         ),
         const SizedBox(height: 10),
-
-        // Full Month Grid
         Expanded(
           child: GridView.builder(
             physics: const NeverScrollableScrollPhysics(),
@@ -191,10 +246,6 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
     return names[m - 1];
   }
 
-  // =====================================================
-  //                    PROJECT LIST
-  // =====================================================
-
   Widget _projectList() {
     final list = data.projects;
     if (list.isEmpty) {
@@ -215,15 +266,38 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
               "${p.startDate.year}-${p.startDate.month}-${p.startDate.day} → "
               "${p.deadline.year}-${p.deadline.month}-${p.deadline.day}",
             ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, color: Colors.blue),
+                  onPressed: () async {
+                    final updated = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AddProjectPage(projectToEdit: p),
+                      ),
+                    );
+                    if (updated == true && _currentUserId != null) {
+                      await data.syncBoth(userId: _currentUserId!);
+                      setState(() {});
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () async {
+                    await data.deleteProject(p);
+                    setState(() {});
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
-
-  // =====================================================
-  //                     BUILD UI
-  // =====================================================
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +316,6 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
       appBar: AppBar(title: const Text("Project Scheduler")),
       body: Column(
         children: [
-          // Calendar (60% of screen)
           Expanded(
             flex: 6,
             child: PageView.builder(
@@ -251,10 +324,21 @@ class _MultiProjectSchedulerPageState extends State<MultiProjectSchedulerPage> {
               itemBuilder: (_, pageIndex) => _buildMonthPage(pageIndex),
             ),
           ),
-
-          // List (40% of screen)
           Expanded(flex: 4, child: _projectList()),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddProjectPage()),
+          );
+          if (result == true && _currentUserId != null) {
+            await data.syncBoth(userId: _currentUserId!);
+            setState(() {});
+          }
+        },
+        child: const Icon(Icons.add),
       ),
     );
   }

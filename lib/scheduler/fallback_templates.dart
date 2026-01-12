@@ -2,19 +2,29 @@ List<Map<String, dynamic>> fallbackSchedule({
   required int totalDays,
   required String title,
 }) {
-  final List<Map<String, dynamic>> out = [];
+  final phases = [
+    "Planning & Research",
+    "Setup Project Structure",
+    "UI Design & Prototyping",
+    "Core Feature Implementation",
+    "Authentication & Backend",
+    "Testing & Bug Fixes",
+    "Polish & Final Review",
+  ];
 
-  for (int i = 1; i <= totalDays; i++) {
-    out.add({
-      "day": i,
-      "title": "Work on $title",
+  return List.generate(totalDays, (i) {
+    final phaseIndex = (i / totalDays * phases.length).floor();
+    final phase = phases[phaseIndex.clamp(0, phases.length - 1)];
+
+    return {
+      "day": i + 1,
+      "title": "Day ${i + 1}: $phase",
       "tasks": [
-        "Review previous work",
-        "Continue core development",
-        "Test & note improvements",
+        "Work on $phase",
+        "Implement key features",
+        "Test functionality",
+        "Refactor code if needed",
       ],
-    });
-  }
-
-  return out;
+    };
+  });
 }

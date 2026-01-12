@@ -52,24 +52,36 @@ class _SplashState extends State<Splash> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Image.asset('assets/logo/Auvyra.png', width: 200, height: 200),
-              const SizedBox(height: 20),
-              const Text(
-                'auvyra',
-                style: TextStyle(
-                  fontSize: 46,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF6A5AE0),
-                  letterSpacing: 1.2,
+              Image.asset(
+                'assets/logo/Auvyra.png',
+                width: 200,
+                height: 200,
+                fit: BoxFit.contain,
+              ),
+
+              Transform.translate(
+                offset: const Offset(0, -50), // 👈 pulls text upward
+                child: const Text(
+                  'auvyra',
+                  style: TextStyle(
+                    fontSize: 46,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF6A5AE0),
+                    letterSpacing: 1.2,
+                    height: 1.0, // 👈 removes extra line height
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
+
+              const SizedBox(height: 4),
+
               const Text(
                 'Learn • Grow • Transform',
                 style: TextStyle(
                   color: Colors.black54,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
+                  height: 1.2,
                 ),
               ),
             ],

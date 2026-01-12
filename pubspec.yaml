@@ -58,6 +58,9 @@ dependencies:
   permission_handler: ^11.0.1
   iconsax: ^0.0.8
   audioplayers: ^6.5.1
+  flutter_launcher_icons: ^0.13.1
+
+
 
 
 
@@ -121,3 +124,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+flutter_icons:
+  android: true
+  ios: true
+  image_path: assets/logo/auvyra_logo.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/logo/auvyra_logo.png
+
